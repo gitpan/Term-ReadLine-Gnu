@@ -1,9 +1,9 @@
 /*
  *	Gnu.xs --- GNU Readline wrapper module
  *
- *	$Id: Gnu.xs,v 1.82 1999-05-17 23:32:34+09 hayashi Exp $
+ *	$Id: Gnu.xs,v 1.86 2000-04-03 00:58:09+09 hayashi Exp $
  *
- *	Copyright (c) 1996-1999 Hiroo Hayashi.  All rights reserved.
+ *	Copyright (c) 2000 Hiroo Hayashi.  All rights reserved.
  *
  *	This program is free software; you can redistribute it and/or
  *	modify it under the same terms as Perl itself.
@@ -15,6 +15,7 @@ extern "C" {
 #include "EXTERN.h"
 #include "perl.h"
 #include "XSUB.h"
+#include "ppport.h"
 #ifdef __cplusplus
 }
 #endif
@@ -45,7 +46,8 @@ extern "C" {
 extern char *xmalloc __P((int));
 extern char *tgetstr __P((const char *, char **));
 #if (RLMAJORVER < 4)
-void rl_extend_line_buffer __P((int));
+extern void rl_extend_line_buffer __P((int));
+extern char **rl_funmap_names __P((void));
 #endif
 
 /*
@@ -85,7 +87,7 @@ dupstr(s)			/* duplicate string */
 }
 
 /*
- * should be defined readline/bind.c ?
+ * should be defined in readline/bind.c ?
  */
 static char *
 rl_get_function_name (function)
@@ -176,12 +178,16 @@ static struct str_vars {
  *	integer variable table for _rl_store_int(), _rl_fetch_int()
  */
 
-#if (RLMAJORVER < 4)
 /* define dummy variable */
+#if (RLMAJORVER < 4)
 static int rl_erase_empty_line = 0;
 static int rl_catch_signals = 1;
 static int rl_catch_sigwinch = 1;
 #endif /* (RLMAJORVER < 4) */
+
+#if (RLMAJORVER < 4 || RLMAJORVER == 4 && RLMINORVER < 1)
+static int rl_already_prompted = 0;
+#endif /* (RLMAJORVER < 4 || RLMAJORVER = 4 && RLMINORVER < 1) */
 
 static struct int_vars {
   int *var;
@@ -210,7 +216,8 @@ static struct int_vars {
   { &history_quotes_inhibit_expansion,		0, 0 },	/* 17 */
   { &rl_erase_empty_line,			0, 0 },	/* 18 */
   { &rl_catch_signals,				0, 0 },	/* 19 */
-  { &rl_catch_sigwinch,				0, 0 }	/* 20 */
+  { &rl_catch_sigwinch,				0, 0 },	/* 20 */
+  { &rl_already_prompted,			0, 0 }	/* 21 */
 };
 
 /*
@@ -248,6 +255,11 @@ enum void_arg_func_type { STARTUP_HOOK, EVENT_HOOK, GETC_FN, REDISPLAY_FN,
 static Function *rl_pre_input_hook;
 static VFunction *rl_completion_display_matches_hook;
 #endif /* (RLMAJORVER < 4) */
+
+/*
+ * rl_last_func support (yes, it's undocumented YET)
+ */
+extern Function *rl_last_func;
 
 static struct fn_vars {
   Function **rlfuncp;		/* GNU Readline Library variable */
@@ -397,7 +409,7 @@ completion_entry_function_wrapper(text, state)
   if (text) {
     XPUSHs(sv_2mortal(newSVpv(text, 0)));
   } else {
-    XPUSHs(&sv_undef);
+    XPUSHs(&PL_sv_undef);
   }
   XPUSHs(sv_2mortal(newSViv(state)));
   PUTBACK;
@@ -410,7 +422,7 @@ completion_entry_function_wrapper(text, state)
     croak("Gnu.xs:completion_entry_function_wrapper: Internal error\n");
 
   match = POPs;
-  str = SvOK(match) ? dupstr(SvPV(match, na)) : NULL;
+  str = SvOK(match) ? dupstr(SvPV(match, PL_na)) : NULL;
 
   PUTBACK;
   FREETMPS;
@@ -439,12 +451,12 @@ attempted_completion_function_wrapper(text, start, end)
   if (text) {
     XPUSHs(sv_2mortal(newSVpv(text, 0)));
   } else {
-    XPUSHs(&sv_undef);
+    XPUSHs(&PL_sv_undef);
   }
   if (rl_line_buffer) {
     XPUSHs(sv_2mortal(newSVpv(rl_line_buffer, 0)));
   } else {
-    XPUSHs(&sv_undef);
+    XPUSHs(&PL_sv_undef);
   }
   XPUSHs(sv_2mortal(newSViv(start)));
   XPUSHs(sv_2mortal(newSViv(end)));
@@ -468,7 +480,7 @@ attempted_completion_function_wrapper(text, start, end)
     for (i = count - 1; i >= 0; i--) {
       SV *v = POPs;
       if (SvOK(v)) {
-	matches[i] = dupstr(SvPV(v, na));
+	matches[i] = dupstr(SvPV(v, PL_na));
       } else {
 	matches[i] = NULL;
 	if (i != 0)
@@ -525,13 +537,13 @@ filename_quoting_function_wrapper(text, match_type, quote_pointer)
   if (text) {
     XPUSHs(sv_2mortal(newSVpv(text, 0)));
   } else {
-    XPUSHs(&sv_undef);
+    XPUSHs(&PL_sv_undef);
   }
   XPUSHs(sv_2mortal(newSViv(match_type)));
   if (quote_pointer) {
     XPUSHs(sv_2mortal(newSVpv(quote_pointer, 0)));
   } else {
-    XPUSHs(&sv_undef);
+    XPUSHs(&PL_sv_undef);
   }
   PUTBACK;
 
@@ -543,7 +555,7 @@ filename_quoting_function_wrapper(text, match_type, quote_pointer)
     croak("Gnu.xs:filename_quoting_function_wrapper: Internal error\n");
 
   replacement = POPs;
-  str = SvOK(replacement) ? dupstr(SvPV(replacement, na)) : NULL;
+  str = SvOK(replacement) ? dupstr(SvPV(replacement, PL_na)) : NULL;
 
   PUTBACK;
   FREETMPS;
@@ -572,7 +584,7 @@ filename_dequoting_function_wrapper(text, quote_char)
   if (text) {
     XPUSHs(sv_2mortal(newSVpv(text, 0)));
   } else {
-    XPUSHs(&sv_undef);
+    XPUSHs(&PL_sv_undef);
   }
   XPUSHs(sv_2mortal(newSViv(quote_char)));
   PUTBACK;
@@ -585,7 +597,7 @@ filename_dequoting_function_wrapper(text, quote_char)
     croak("Gnu.xs:filename_dequoting_function_wrapper: Internal error\n");
 
   replacement = POPs;
-  str = SvOK(replacement) ? dupstr(SvPV(replacement, na)) : NULL;
+  str = SvOK(replacement) ? dupstr(SvPV(replacement, PL_na)) : NULL;
 
   PUTBACK;
   FREETMPS;
@@ -613,7 +625,7 @@ char_is_quoted_p_wrapper(text, index)
   if (text) {
     XPUSHs(sv_2mortal(newSVpv(text, 0)));
   } else {
-    XPUSHs(&sv_undef);
+    XPUSHs(&PL_sv_undef);
   }
   XPUSHs(sv_2mortal(newSViv(index)));
   PUTBACK;
@@ -656,7 +668,7 @@ ignore_some_completions_function_wrapper(matches)
     XPUSHs(sv_2mortal(newSVpv(matches[0], 0)));
     /* xfree(matches[0]);*/
   } else {
-    XPUSHs(&sv_undef);
+    XPUSHs(&PL_sv_undef);
   }
   for (i = 1; matches[i]; i++) {
       XPUSHs(sv_2mortal(newSVpv(matches[i], 0)));
@@ -686,7 +698,7 @@ ignore_some_completions_function_wrapper(matches)
     for (i = count - 1; i > 0; i--) { /* don't pop matches[0] */
       SV *v = POPs;
       if (SvOK(v)) {
-	matches[i] = dupstr(SvPV(v, na));
+	matches[i] = dupstr(SvPV(v, PL_na));
       } else {
 	matches[i] = NULL;
 	dopack = i;		/* lowest index of undef */
@@ -739,7 +751,7 @@ directory_completion_hook_wrapper(textp)
   if (textp && *textp) {
     sv = sv_2mortal(newSVpv(*textp, 0));
   } else {
-    sv = &sv_undef;
+    sv = &PL_sv_undef;
   }
 
   PUSHMARK(sp);
@@ -755,7 +767,7 @@ directory_completion_hook_wrapper(textp)
 
   ret = POPi;
 
-  rstr = SvPV(sv, na);
+  rstr = SvPV(sv, PL_na);
   if (strcmp(*textp, rstr) != 0) {
     xfree(*textp);
     *textp = dupstr(rstr);
@@ -788,7 +800,7 @@ history_inhibit_expansion_function_wrapper(text, index)
   if (text) {
     XPUSHs(sv_2mortal(newSVpv(text, 0)));
   } else {
-    XPUSHs(&sv_undef);
+    XPUSHs(&PL_sv_undef);
   }
   XPUSHs(sv_2mortal(newSViv(index)));
   PUTBACK;
@@ -830,18 +842,18 @@ completion_display_matches_hook_wrapper(matches, len, max)
   if (matches[0]) {
     av_push(av_matches, sv_2mortal(newSVpv(matches[0], 0)));
   } else {
-    av_push(av_matches, &sv_undef);
+    av_push(av_matches, &PL_sv_undef);
   }
 
   for (i = 1; matches[i]; i++)
     if (matches[i]) {
       av_push(av_matches, sv_2mortal(newSVpv(matches[i], 0)));
     } else {
-      av_push(av_matches, &sv_undef);
+      av_push(av_matches, &PL_sv_undef);
     }
 
   PUSHMARK(sp);
-  XPUSHs(sv_2mortal(newRV((SV *)av_matches))); /* push reference of array */
+  XPUSHs(sv_2mortal(newRV_inc((SV *)av_matches))); /* push reference of array */
   XPUSHs(sv_2mortal(newSViv(len)));
   XPUSHs(sv_2mortal(newSViv(max)));
   PUTBACK;
@@ -935,7 +947,7 @@ callback_handler_wrapper(line)
   if (line) {
     XPUSHs(sv_2mortal(newSVpv(line, 0)));
   } else {
-    XPUSHs(&sv_undef);
+    XPUSHs(&PL_sv_undef);
   }
   PUTBACK;
 
@@ -1297,6 +1309,31 @@ rl_get_all_function_names()
 	  }
 	}
 
+void
+rl_funmap_names()
+	PROTOTYPE:
+	PPCODE:
+	{
+	  char **funmap;
+
+	  funmap = rl_funmap_names(); /* don't free returned memory */
+
+	  if (funmap) {
+	    int i, count;
+
+	    /* count number of entries */
+	    for (count = 0; funmap[count]; count++)
+	      ;
+
+	    EXTEND(sp, count);
+	    for (i = 0; i < count; i++) {
+	      PUSHs(sv_2mortal(newSVpv(funmap[i], 0)));
+	    }
+	  } else {
+	    /* return null list */
+	  }
+	}
+
 #
 #	2.4.5 Allowing Undoing
 #
@@ -1348,6 +1385,13 @@ rl_forced_update_display()
 int
 rl_on_new_line()
 	PROTOTYPE:
+
+#if (RLMAJORVER >= 4 && RLMINORVER >= 1 || RLMAJORVER > 4)
+int
+rl_on_new_line_with_prompt()
+	PROTOTYPE:
+
+#endif /* readline-4.1 and later */
 
 int
 rl_reset_line_state()
@@ -1916,7 +1960,7 @@ _get_history_event(string, cindex, qchar = 0)
 	  if (text) {		/* don't free `text' */
 	    PUSHs(sv_2mortal(newSVpv(text, 0)));
 	  } else {
-	    PUSHs(&sv_undef);
+	    PUSHs(&PL_sv_undef);
 	  }
 	  PUSHs(sv_2mortal(newSViv(cindex)));
 	}
@@ -2194,7 +2238,7 @@ _rl_store_function(fn, id)
 	    *(fn_tbl[id].rlfuncp) = fn_tbl[id].wrapper;
 	  } else {
 	    if (fn_tbl[id].callback) {
-	      SvSetSV(fn_tbl[id].callback, &sv_undef);
+	      SvSetSV(fn_tbl[id].callback, &PL_sv_undef);
 	    }
 	    *(fn_tbl[id].rlfuncp) = fn_tbl[id].defaultfn;
 	  }
@@ -2217,6 +2261,16 @@ _rl_fetch_function(id)
 	    sv_setsv(ST(0), fn_tbl[id].callback);
 	  }
 	}
+
+Function *
+_rl_fetch_last_func()
+	PROTOTYPE:
+	CODE:
+	{
+	  RETVAL = rl_last_func;
+	}
+	OUTPUT:
+	RETVAL
 
 MODULE = Term::ReadLine::Gnu		PACKAGE = Term::ReadLine::Gnu::XS
 
