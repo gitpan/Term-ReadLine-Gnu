@@ -1,7 +1,7 @@
 #
 #	Makefile.PL for Term::ReadLine::Gnu
 #
-#	$Id: Makefile.PL,v 1.12 1998-09-29 01:02:07+09 hayashi Exp $
+#	$Id: Makefile.PL,v 1.13 1999-05-05 02:45:22+09 hayashi Exp $
 #
 #	Copyright (c) 1996,1997,1998 Hiroo Hayashi.  All rights reserved.
 #		<hiroo.hayashi@computer.org>
@@ -20,6 +20,11 @@ $increadlinedir = '/usr/local/gnu/include';	# for -I option
 ########################################################################
 use ExtUtils::MakeMaker;
 use Config;
+
+if ($Config{usesfio} eq 'true') {
+    warn("** Perl is configured with \'usesfio\' equals true. **\n");
+    warn("** The GNU Readline Library may not work with perl with sfio. **\n");
+}
 
 $defs = ($Config{strings} =~ m|/string.h$|) ? '-DHAVE_STRING_H' : '';
 

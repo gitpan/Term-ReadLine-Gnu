@@ -1,7 +1,7 @@
 /*
  *	Gnu.xs --- GNU Readline wrapper module
  *
- *	$Id: Gnu.xs,v 1.78 1999-04-04 21:20:25+09 hayashi Exp $
+ *	$Id: Gnu.xs,v 1.81 1999-05-05 02:24:26+09 hayashi Exp $
  *
  *	Copyright (c) 1996-1999 Hiroo Hayashi.  All rights reserved.
  *
@@ -485,6 +485,9 @@ attempted_completion_function_wrapper(text, start, end)
       xfree(matches[0]);
       matches[0] = matches[1];
       matches[1] = NULL;
+    } else if (count == 1 && !matches[0]) { /* in case of a list of undef */
+      xfree(matches);
+      matches = NULL;
     }
   } else {
     matches = NULL;
@@ -959,6 +962,8 @@ rl_readline(prompt = NULL)
 	CODE:
 	{
 	  char *line_read = readline(prompt);
+
+	  SPAGAIN;		/* see comment at completion_matches() !!!*/
 
 	  ST(0) = sv_newmortal(); /* default return value is 'undef' */
 	  if (line_read) {
@@ -1573,6 +1578,13 @@ completion_matches(text, fn = NULL)
 	  } else
 	    matches = completion_matches(text, NULL);
 
+	  /*
+	   * Without the next line the Perl internal stack is broken
+	   * under some condition.  Perl bug or undocumented feature
+	   * !!!?
+	   */
+	  SPAGAIN; sp -= 2;
+	  
 	  if (matches) {
 	    int i, count;
 
