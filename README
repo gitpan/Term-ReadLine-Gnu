@@ -1,8 +1,8 @@
-$Id: README,v 1.15 1999-05-05 02:56:58+09 hayashi Exp $
+$Id: README,v 1.17 1999-07-19 22:43:40+09 hayashi Exp $
 
 Term::ReadLine::Gnu --- GNU Readline Library Wrapper Module
 
-	Copyright (c) 1996-1999 Hiroo Hayashi.  All rights reserved.
+	Copyright (c) 1999 Hiroo Hayashi.  All rights reserved.
 
 	This program is free software; you can redistribute it and/or
 	modify it under the same terms as Perl itself.
@@ -56,6 +56,17 @@ Author:
 
 
 Revision History:
+
+1.07  1999-07-19
+	- search path for the GNU Readline Library is specified by
+	  command line argument instead of editing Makefile.PL.
+	- fix bug of t/readline.t which warns for the GNU Readline
+	  version 2.1.
+	- Makefile.PL now looks for shared libraries not only for
+	  static ones
+	- add support for Cygwin b20.1 and HPUX (HPUX support may be
+	  incomplete.)
+	- no change on Gnu.pm and Gnu.xs
 
 1.06  1999-05-05
 	- fix a bug which causes segmentation fault when

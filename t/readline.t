@@ -1,7 +1,7 @@
 # -*- perl -*-
 #	readline.t - Test script for Term::ReadLine:GNU
 #
-#	$Id: readline.t,v 1.34 1999-04-24 11:11:35+09 hayashi Exp $
+#	$Id: readline.t,v 1.37 1999-07-07 01:20:36+09 hayashi Exp $
 #
 #	Copyright (c) 1996-1999 Hiroo Hayashi.  All rights reserved.
 #
@@ -286,7 +286,7 @@ $res = (is_boundp("\cT", 'reverse-line')
 	&& is_boundp("\eo",    'change-ornaments')
 	&& is_boundp("\e?f",   'dump-functions')
 	&& is_boundp("\e?v",   'dump-variables')
-	&& is_boundp("\e?m",   'dump-macros'));
+	&& ($version <= 2.1 or is_boundp("\e?m",   'dump-macros')));
 ok;
 
 # test rl_read_init_file
@@ -310,8 +310,13 @@ ok;
 $t->unbind_key(ord "\ct");	# reverse-line
 $t->unbind_key(ord "f", $helpmap); # dump-function
 $t->unbind_key(ord "v", 'emacs-ctlx'); # display-readline-version
-$t->unbind_command_in_map('display-readline-version', 'emacs-ctlx');
-$t->unbind_function_in_map($t->named_function('dump-variables'), $helpmap);
+if ($version > 2.1) {
+    $t->unbind_command_in_map('display-readline-version', 'emacs-ctlx');
+    $t->unbind_function_in_map($t->named_function('dump-variables'), $helpmap);
+} else {
+    $t->unbind_key(ord "\cV", 'emacs-ctlx');
+    $t->unbind_key(ord "v", $helpmap);
+}
 
 my @keyseqs = ($t->invoking_keyseqs('reverse-line'),
 	       $t->invoking_keyseqs('dump-functions'),
@@ -402,6 +407,7 @@ $a->{getc_function} = sub {
 sub is_boundp {
     my ($seq, $fname) = @_;
     my ($fn, $type) = $t->function_of_keyseq($seq);
+    die "no fn for seq $seq fname $fname" unless $fn;
     return ($t->get_function_name($fn) eq $fname
 	    && $type == ISFUNC);
 }
@@ -497,7 +503,12 @@ $t->parse_and_bind('set bell-style none'); # make readline quiet
 
 $INSTR = "t/comp\cI\e*\cM";
 $line = $t->readline("insert completion>");
-# "a_b" < "README" on some locale ? (bug?)
+# "a_b" < "README" on some kind of locale since strcoll() is used in
+# the GNU Readline Library.
+# Not all perl support setlocale.  My perl supports locale and I tried
+#   use POSIX qw(locale_h); setlocale(LC_COLLATE, 'C');
+# But it seems that it does not affect strcoll() linked to GNU
+# Readline Library.
 $res = $line eq 't/comptest/0123 t/comptest/012345 t/comptest/023456 t/comptest/README t/comptest/a_b '
     || $line eq 't/comptest/0123 t/comptest/012345 t/comptest/023456 t/comptest/a_b t/comptest/README ';
 ok('insert completion', $line);
@@ -737,7 +748,10 @@ print "ok $n\n"; $n++;
 ########################################################################
 # end of non-interactive test
 unless ($verbose) {
-    print STDERR "ok\tTry \`perl -Mblib t/readline.t verbose\', if you will.\n" if $ok;
+    # $^X : `perl' for dynamically linked perl, `./perl' for
+    #        statically linked perl.
+    print STDERR "ok\tTry \`$^X -Mblib t/readline.t verbose\', if you will.\n"
+	if $ok;
     exit 0;
 }
 ########################################################################
