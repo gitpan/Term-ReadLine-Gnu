@@ -3,7 +3,7 @@
 #
 #	$Id: readline.t,v 1.42 2001-10-27 23:10:14-05 hayashi Exp $
 #
-#	Copyright (c) 2001 Hiroo Hayashi.  All rights reserved.
+#	Copyright (c) 2002 Hiroo Hayashi.  All rights reserved.
 #
 #	This program is free software; you can redistribute it and/or
 #	modify it under the same terms as Perl itself.
