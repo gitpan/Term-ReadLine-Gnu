@@ -1,4 +1,4 @@
-$Id: README,v 1.5 1997-03-18 02:40:07+09 hayashi Exp $
+$Id: README,v 1.8 1997-08-25 00:33:29+09 hayashi Exp $
 
 Term::ReadLine::Gnu --- GNU Readline Library Wrapper Module
 
@@ -35,9 +35,8 @@ Description:
 	fixing his module.
 
 Prerequisites:
-	You must have GNU Readline Library Version 2.1 which is
-	included in the GNU Bash version 2.0 distribution.  See
-	INSTALL.
+	You must have GNU Readline Library Version 2.1.  See
+	INSTALL for more detail.
 
 How to build/install:
 	See INSTALL.
@@ -46,6 +45,10 @@ Recent changes in this release:
 	See Changes.
 
 Bugs:
+	If you use Solaris 2.5 and dynamic loading, "make test" causes
+	core dump.  The only fix I know now is to link this module
+	statically.  See INSTALL for more details.
+
 	The GNU Readline Library is very stable.  But this is my first
 	XS programming, my first module programming and, my first
 	object oriented programming, and...  There must be many bugs
@@ -53,4 +56,4 @@ Bugs:
 	grammar).  Comments and bug reports are very welcome.
 
 Author:
-	Hiroo Hayashi <hayashi@pdcd.ilab.toshiba.co.jp>
+	Hiroo Hayashi <hiroo.hayashi@toshiba.co.jp>

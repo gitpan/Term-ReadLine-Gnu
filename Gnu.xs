@@ -1,7 +1,7 @@
 /*
  *	Gnu.xs --- GNU Readline wrapper module
  *
- *	$Id: Gnu.xs,v 1.52 1997-03-17 02:20:21+09 hayashi Exp $
+ *	$Id: Gnu.xs,v 1.55 1997-08-24 23:51:41+09 hayashi Exp $
  *
  *	Copyright (c) 1996,1997 Hiroo Hayashi.  All rights reserved.
  *
@@ -78,7 +78,7 @@ rl_get_function_name (function)
 static struct str_vars {
   char **var;
   int accessed;
-  int readonly;
+  int read_only;
 } str_tbl[] = {
   /* When you change length of rl_line_buffer, you must call
      rl_extend_line_buffer().  See _rl_store_rl_line_buffer() */
@@ -153,7 +153,7 @@ enum void_arg_func_type { STARTUP_HOOK, EVENT_HOOK, GETC_FN, REDISPLAY_FN,
 			  CMP_ENT, ATMPT_COMP };
 
 static struct fn_vars {
-  Function **rlfuncp;		/* Readline Library variable */
+  Function **rlfuncp;		/* GNU Readline Library variable */
   Function *defaultfn;		/* default function */
   Function *wrapper;		/* wrapper function */
   SV *callback;			/* Perl function */
@@ -813,7 +813,6 @@ rl_modifying(start = 0, end = rl_end)
 #
 #	2.4.6 Redisplay
 #
-# in info : int rl_redisplay()
 void
 rl_redisplay()
 	PROTOTYPE:
@@ -1235,8 +1234,10 @@ history_expand(line)
 	}
 
 #
-#	Readline/History Library Variable Access Routines
+#	GNU Readline/History Library Variable Access Routines
 #
+
+MODULE = Term::ReadLine::Gnu		PACKAGE = Term::ReadLine::Gnu::Var
 
 void
 _rl_store_str(pstr, id)
@@ -1253,14 +1254,14 @@ _rl_store_str(pstr, id)
 	    XSRETURN_UNDEF;
 	  }
 
-	  if (str_tbl[id].readonly) {
+	  if (str_tbl[id].read_only) {
 	    warn("Gnu.xs:_rl_store_str: store to read only variable");
 	    XSRETURN_UNDEF;
 	  }
 
 	  /*
 	   * Use xmalloc() and xfree() instead of New() and Safefree(),
-	   * because this block may be reallocated by the Readline Library.
+	   * because this block may be reallocated by the GNU Readline Library.
 	   */
 	  if (str_tbl[id].accessed && *str_tbl[id].var) {
 	    /*

@@ -1,4 +1,26 @@
+$Id: Changes,v 1.10 1997-08-25 00:50:29+09 hayashi Exp $
+
 Revision history for Perl extension Term::ReadLine::Gnu.
+
+0.09  Mon Aug 25 00:33:29 1997
+	- add documentation about readline-2.1.tar.gz
+	- add documentation about Solaris 2.5 with dynamic loading
+	- bug fix
+		fix for Digital Unix C compiler
+	- add two sample programs
+		eg/pftp		An ftp client with the GNU Readline support
+		eg/ptksh+	Simple perl/Tk shell which demonstrates
+				the callback functions
+
+0.08  Sun Apr 13 23:24:52 1997
+
+	- bug fix: AddHistory() accepts list again.
+	- move perlsh into eg/.
+	- add eg/ptksh+ which demonstrates the callback functions.
+	  Thank you Achim.
+	- add eg/pftp: an ftp client which has much the GNU Readline support.
+	- Author's Email address is changed.
+	- internal functions, fetch_var() and store_var(), are removed.
 
 0.07  Wed Mar 19 02:26:06 1997
 
@@ -56,5 +78,3 @@ Revision history for Perl extension Term::ReadLine::Gnu.
 
 0.01  Wed Nov 20 01:14:09 1996
 	- The 1st alpha release revision (tested on Linux 1.2.13)
-
-
