@@ -1,9 +1,9 @@
 /*
  *	Gnu.xs --- GNU Readline wrapper module
  *
- *	$Id: Gnu.xs,v 1.62 1999-02-23 01:15:12+09 hayashi Exp $
+ *	$Id: Gnu.xs,v 1.78 1999-04-04 21:20:25+09 hayashi Exp $
  *
- *	Copyright (c) 1996,1997 Hiroo Hayashi.  All rights reserved.
+ *	Copyright (c) 1996-1999 Hiroo Hayashi.  All rights reserved.
  *
  *	This program is free software; you can redistribute it and/or
  *	modify it under the same terms as Perl itself.
@@ -23,21 +23,27 @@ extern "C" {
 #include <readline/readline.h>
 #include <readline/history.h>
 
-/* following variables should be defined in readline.h */
-extern char *rl_prompt;
-extern int rl_completion_query_items;
-extern int rl_ignore_completion_duplicates;
+/*
+ * Perl 5.005 requires an ANSI C Compiler.  Good news.
+ * But I should still support legacy C compilers now.
+ */
+/* Adapted from BSD /usr/include/sys/cdefs.h. */
+#if defined (__STDC__)
+#  if !defined (__P)
+#    define __P(protos) protos
+#  endif
+#else /* !__STDC__ */
+#  if !defined (__P)
+#    define __P(protos) ()
+#  endif
+#endif /* !__STDC__ */
 
-#ifdef __STDC__
 /* from GNU Readline:xmalloc.c */
-extern char *xmalloc (int);
-void rl_extend_line_buffer (int);
-extern char *tgetstr(const char *, char **);
-#else
-extern char *xmalloc ();
-void rl_extend_line_buffer ();
-extern char *tgetstr();
-#endif /* __STDC__ */
+extern char *xmalloc __P((int));
+extern char *tgetstr __P((const char *, char **));
+#if (RLMAJORVER < 4)
+void rl_extend_line_buffer __P((int));
+#endif
 
 /*
  * Using xfree() in GNU Readline Library causes problem with Solaris
@@ -47,12 +53,8 @@ extern char *tgetstr();
  * usemymalloc=n is required.
  */
 #ifdef OS2_USEDLL
-#ifdef __STDC__
 /* from GNU Readline:xmalloc.c */
-extern char *xfree (char *);
-#else
-extern char *xfree ();
-#endif /* __STDC__ */
+extern char *xfree __P((char *));
 
 #else /* !OS2_USEDLL */
 static void
@@ -96,6 +98,29 @@ rl_get_function_name (function)
   return NULL;
 }
 
+/*
+ * from readline-4.0:complete.c
+ * Redefine here since the function defined as static in complete.c.
+ * This function is used for default vaule for rl_filename_quoting_function.
+ */
+static char * rl_quote_filename __P((char *s, int rtype, char *qcp));
+
+static char *
+rl_quote_filename (s, rtype, qcp)
+     char *s;
+     int rtype;
+     char *qcp;
+{
+  char *r;
+
+  r = xmalloc (strlen (s) + 2);
+  *r = *rl_completer_quote_characters;
+  strcpy (r + 1, s);
+  if (qcp)
+    *qcp = *rl_completer_quote_characters;
+  return r;
+}
+
 #if (RLMAJORVER < 4)
 /*
  * Before GNU Readline Library Version 4.0, rl_save_prompt() was
@@ -103,6 +128,16 @@ rl_get_function_name (function)
  */
 void rl_save_prompt() { _rl_save_prompt(); }
 void rl_restore_prompt() { _rl_restore_prompt(); }
+
+/*
+ * Dummy functions
+ */
+void rl_cleanup_after_signal(){};
+void rl_free_line_state(){};
+void rl_reset_after_signal(){};
+void rl_resize_terminal(){};
+int rl_set_signals(){ 0; };
+int rl_clear_signals(){ 0; };
 #endif /* (RLMAJORVER < 4) */
 
 
@@ -138,6 +173,13 @@ static struct str_vars {
  *	integer variable table for _rl_store_int(), _rl_fetch_int()
  */
 
+#if (RLMAJORVER < 4)
+/* define dummy variable */
+static int rl_erase_empty_line = 0;
+static int rl_catch_signals = 1;
+static int rl_catch_sigwinch = 1;
+#endif /* (RLMAJORVER < 4) */
+
 static struct int_vars {
   int *var;
   int charp;
@@ -162,7 +204,10 @@ static struct int_vars {
   { (int *)&history_expansion_char,		1, 0 },	/* 14 */
   { (int *)&history_subst_char,			1, 0 },	/* 15 */
   { (int *)&history_comment_char,		1, 0 },	/* 16 */
-  { &history_quotes_inhibit_expansion,		0, 0 }	/* 17 */
+  { &history_quotes_inhibit_expansion,		0, 0 },	/* 17 */
+  { &rl_erase_empty_line,			0, 0 },	/* 18 */
+  { &rl_catch_signals,				0, 0 },	/* 19 */
+  { &rl_catch_sigwinch,				0, 0 }	/* 20 */
 };
 
 /*
@@ -170,24 +215,36 @@ static struct int_vars {
  *	_rl_fetch_funtion()
  */
 
-#ifdef __STDC__
-static int startup_hook_wrapper(void);
-static int event_hook_wrapper(void);
-static int getc_function_wrapper(FILE *);
-static void redisplay_function_wrapper(void);
-static char *completion_entry_function_wrapper(char *, int);
-static char **attempted_completion_function_wrapper(char *, int, int);
-#else
-static int startup_hook_wrapper();
-static int event_hook_wrapper();
-static int getc_function_wrapper();
-static void redisplay_function_wrapper();
-static char *completion_entry_function_wrapper();
-static char **attempted_completion_function_wrapper();
-#endif /* __STDC__ */
+static int startup_hook_wrapper __P((void));
+static int event_hook_wrapper __P((void));
+static int getc_function_wrapper __P((FILE *));
+static void redisplay_function_wrapper __P((void));
+static char *completion_entry_function_wrapper __P((char *, int));
+static char **attempted_completion_function_wrapper __P((char *, int, int));
+static char *filename_quoting_function_wrapper __P((char *text, int match_type,
+						    char *quote_pointer));
+static char *filename_dequoting_function_wrapper __P((char *text,
+						      int quote_char));
+static int char_is_quoted_p_wrapper __P((char *text, int index));
+static void ignore_some_completions_function_wrapper __P((char **matches));
+static int directory_completion_hook_wrapper __P((char **textp));
+static int history_inhibit_expansion_function_wrapper __P((char *str, int i));
+static int pre_input_hook_wrapper __P((void));
+static void completion_display_matches_hook_wrapper __P((char **matches,
+							 int len, int max));
 
 enum void_arg_func_type { STARTUP_HOOK, EVENT_HOOK, GETC_FN, REDISPLAY_FN,
-			  CMP_ENT, ATMPT_COMP };
+			  CMP_ENT, ATMPT_COMP,
+			  FN_QUOTE, FN_DEQUOTE, CHAR_IS_QUOTEDP,
+			  IGNORE_COMP, DIR_COMP, HIST_INHIBIT_EXP,
+			  PRE_INPUT_HOOK, COMP_DISP_HOOK
+			};
+
+#if (RLMAJORVER < 4)
+/* define dummy variable */
+static Function *rl_pre_input_hook;
+static VFunction *rl_completion_display_matches_hook;
+#endif /* (RLMAJORVER < 4) */
 
 static struct fn_vars {
   Function **rlfuncp;		/* GNU Readline Library variable */
@@ -211,9 +268,52 @@ static struct fn_vars {
     NULL
   },
   {
-    (Function **)&rl_attempted_completion_function,		 /* 5 */
+    (Function **)&rl_attempted_completion_function,		/* 5 */
     NULL,
     (Function *)attempted_completion_function_wrapper,
+    NULL
+  },
+  {
+    (Function **)&rl_filename_quoting_function,			/* 6 */
+    (Function *)rl_quote_filename,
+    (Function *)filename_quoting_function_wrapper,
+    NULL
+  },
+  {
+    (Function **)&rl_filename_dequoting_function,		/* 7 */
+    NULL,
+    (Function *)filename_dequoting_function_wrapper,
+    NULL
+  },
+  {
+    (Function **)&rl_char_is_quoted_p,				/* 8 */
+    NULL,
+    (Function *)char_is_quoted_p_wrapper,
+    NULL
+  },
+  {
+    (Function **)&rl_ignore_some_completions_function,		/* 9 */
+    NULL,
+    (Function *)ignore_some_completions_function_wrapper,
+    NULL
+  },
+  {
+    (Function **)&rl_directory_completion_hook,			/* 10 */
+    NULL,
+    (Function *)directory_completion_hook_wrapper,
+    NULL
+  },
+  {
+    (Function **)&history_inhibit_expansion_function,		/* 11 */
+    NULL,
+    (Function *)history_inhibit_expansion_function_wrapper,
+    NULL
+  },
+  { &rl_pre_input_hook,	NULL,	pre_input_hook_wrapper,	NULL },	/* 12 */
+  {
+    (Function **)&rl_completion_display_matches_hook,		/* 13 */
+    NULL,
+    (Function *)completion_display_matches_hook_wrapper,
     NULL
   }
 };
@@ -222,11 +322,7 @@ static struct fn_vars {
  * Perl function wrappers
  */
 
-#ifdef __STDC__
-static int void_arg_func_wrapper(int);
-#else
-static int void_arg_func_wrapper();
-#endif
+static int void_arg_func_wrapper __P((int));
 
 static int
 startup_hook_wrapper()		{ return void_arg_func_wrapper(STARTUP_HOOK); }
@@ -248,12 +344,16 @@ static void
 redisplay_function_wrapper()	{ void_arg_func_wrapper(REDISPLAY_FN); }
 
 static int
+pre_input_hook_wrapper() { return void_arg_func_wrapper(PRE_INPUT_HOOK); }
+
+static int
 void_arg_func_wrapper(type)
      int type;
 {
   dSP;
   int count;
   int ret;
+  SV *svret;
 
   ENTER;
   SAVETMPS;
@@ -265,7 +365,8 @@ void_arg_func_wrapper(type)
   if (count != 1)
     croak("Gnu.xs:void_arg_func_wrapper: Internal error\n");
 
-  ret = POPi;
+  svret = POPs;
+  ret = SvIOK(svret) ? SvIV(svret) : -1;
   PUTBACK;
   FREETMPS;
   LEAVE;
@@ -337,7 +438,11 @@ attempted_completion_function_wrapper(text, start, end)
   } else {
     XPUSHs(&sv_undef);
   }
-  XPUSHs(sv_2mortal(newSVpv(rl_line_buffer, 0)));
+  if (rl_line_buffer) {
+    XPUSHs(sv_2mortal(newSVpv(rl_line_buffer, 0)));
+  } else {
+    XPUSHs(&sv_undef);
+  }
   XPUSHs(sv_2mortal(newSViv(start)));
   XPUSHs(sv_2mortal(newSViv(end)));
   PUTBACK;
@@ -346,24 +451,43 @@ attempted_completion_function_wrapper(text, start, end)
 
   SPAGAIN;
 
-  matches = NULL;
-
-  if (count > 1) {
+  /* cf. ignore_some_completions_function_wrapper() */
+  if (count > 0) {
     int i;
+    int dopack = -1;
 
+    /*
+     * The returned array may contain some undef items.
+     * Pack the array in such case.
+     */
     matches = (char **)xmalloc (sizeof(char *) * (count + 1));
     matches[count] = NULL;
-    for (i = count - 1; i >= 0; i--)
-      matches[i] = dupstr(POPp);
-
-  } else if (count == 1) {	/* return NULL if undef is returned */
-    SV *v = POPs;
-
-    if (SvOK(v)) {
-      matches = (char **)xmalloc (sizeof(char *) * 2);
-      matches[0] = dupstr(SvPV(v, na));
+    for (i = count - 1; i >= 0; i--) {
+      SV *v = POPs;
+      if (SvOK(v)) {
+	matches[i] = dupstr(SvPV(v, na));
+      } else {
+	matches[i] = NULL;
+	if (i != 0)
+	  dopack = i;		/* lowest index of hole */
+      }
+    }
+    /* pack undef items */
+    if (dopack > 0) {		/* don't pack matches[0] */
+      int j = dopack;
+      for (i = dopack; i < count; i++) {
+	if (matches[i])
+	  matches[j++] = matches[i];
+      }
+      matches[count = j] = NULL;
+    }
+    if (count == 2) {	/* only one match */
+      xfree(matches[0]);
+      matches[0] = matches[1];
       matches[1] = NULL;
     }
+  } else {
+    matches = NULL;
   }
 
   PUTBACK;
@@ -374,100 +498,405 @@ attempted_completion_function_wrapper(text, start, end)
 }
 
 /*
+ * call a perl function as rl_filename_quoting_function
+ */
+
+static char *
+filename_quoting_function_wrapper(text, match_type, quote_pointer)
+     char *text;
+     int match_type;
+     char *quote_pointer;
+{
+  dSP;
+  int count;
+  SV *replacement;
+  char *str;
+  
+  ENTER;
+  SAVETMPS;
+
+  PUSHMARK(sp);
+  if (text) {
+    XPUSHs(sv_2mortal(newSVpv(text, 0)));
+  } else {
+    XPUSHs(&sv_undef);
+  }
+  XPUSHs(sv_2mortal(newSViv(match_type)));
+  if (quote_pointer) {
+    XPUSHs(sv_2mortal(newSVpv(quote_pointer, 0)));
+  } else {
+    XPUSHs(&sv_undef);
+  }
+  PUTBACK;
+
+  count = perl_call_sv(fn_tbl[FN_QUOTE].callback, G_SCALAR);
+
+  SPAGAIN;
+
+  if (count != 1)
+    croak("Gnu.xs:filename_quoting_function_wrapper: Internal error\n");
+
+  replacement = POPs;
+  str = SvOK(replacement) ? dupstr(SvPV(replacement, na)) : NULL;
+
+  PUTBACK;
+  FREETMPS;
+  LEAVE;
+  return str;
+}
+
+/*
+ * call a perl function as rl_filename_dequoting_function
+ */
+
+static char *
+filename_dequoting_function_wrapper(text, quote_char)
+     char *text;
+     int quote_char;
+{
+  dSP;
+  int count;
+  SV *replacement;
+  char *str;
+  
+  ENTER;
+  SAVETMPS;
+
+  PUSHMARK(sp);
+  if (text) {
+    XPUSHs(sv_2mortal(newSVpv(text, 0)));
+  } else {
+    XPUSHs(&sv_undef);
+  }
+  XPUSHs(sv_2mortal(newSViv(quote_char)));
+  PUTBACK;
+
+  count = perl_call_sv(fn_tbl[FN_DEQUOTE].callback, G_SCALAR);
+
+  SPAGAIN;
+
+  if (count != 1)
+    croak("Gnu.xs:filename_dequoting_function_wrapper: Internal error\n");
+
+  replacement = POPs;
+  str = SvOK(replacement) ? dupstr(SvPV(replacement, na)) : NULL;
+
+  PUTBACK;
+  FREETMPS;
+  LEAVE;
+  return str;
+}
+
+/*
+ * call a perl function as rl_char_is_quoted_p
+ */
+
+static int
+char_is_quoted_p_wrapper(text, index)
+     char *text;
+     int index;
+{
+  dSP;
+  int count;
+  int ret;
+  
+  ENTER;
+  SAVETMPS;
+
+  PUSHMARK(sp);
+  if (text) {
+    XPUSHs(sv_2mortal(newSVpv(text, 0)));
+  } else {
+    XPUSHs(&sv_undef);
+  }
+  XPUSHs(sv_2mortal(newSViv(index)));
+  PUTBACK;
+
+  count = perl_call_sv(fn_tbl[CHAR_IS_QUOTEDP].callback, G_SCALAR);
+
+  SPAGAIN;
+
+  if (count != 1)
+    croak("Gnu.xs:char_is_quoted_p_wrapper: Internal error\n");
+
+  ret = POPi;			/* warns unless integer */
+  PUTBACK;
+  FREETMPS;
+  LEAVE;
+  return ret;
+}
+
+/*
+ * call a perl function as rl_ignore_some_completions_function
+ */
+
+static void
+ignore_some_completions_function_wrapper(matches)
+     char **matches;
+{
+  dSP;
+  int count, i, only_one_match;
+  
+  only_one_match = matches[1] == NULL ? 1 : 0;
+
+  ENTER;
+  SAVETMPS;
+
+  PUSHMARK(sp);
+
+  /* matches[0] is the maximal matching substring.  So it may NULL, even rest
+   * of matches[] has values. */
+  if (matches[0]) {
+    XPUSHs(sv_2mortal(newSVpv(matches[0], 0)));
+    /* xfree(matches[0]);*/
+  } else {
+    XPUSHs(&sv_undef);
+  }
+  for (i = 1; matches[i]; i++) {
+      XPUSHs(sv_2mortal(newSVpv(matches[i], 0)));
+      xfree(matches[i]);
+  }
+  /*xfree(matches);*/
+  PUTBACK;
+
+  count = perl_call_sv(fn_tbl[IGNORE_COMP].callback, G_ARRAY);
+
+  SPAGAIN;
+
+  if (only_one_match) {
+    if (count == 0) {		/* no match */
+      xfree(matches[0]);
+      matches[0] = NULL;
+    } /* else only one match */
+  } else if (count > 0) {
+    int i;
+    int dopack = -1;
+
+    /*
+     * The returned array may contain some undef items.
+     * Pack the array in such case.
+     */
+    matches[count] = NULL;
+    for (i = count - 1; i > 0; i--) { /* don't pop matches[0] */
+      SV *v = POPs;
+      if (SvOK(v)) {
+	matches[i] = dupstr(SvPV(v, na));
+      } else {
+	matches[i] = NULL;
+	dopack = i;		/* lowest index of undef */
+      }
+    }
+    /* pack undef items */
+    if (dopack > 0) {		/* don't pack matches[0] */
+      int j = dopack;
+      for (i = dopack; i < count; i++) {
+	if (matches[i])
+	  matches[j++] = matches[i];
+      }
+      matches[count = j] = NULL;
+    }
+    if (count == 1) {		/* no match */
+      xfree(matches[0]);
+      matches[0] = NULL;
+    } else if (count == 2) {	/* only one match */
+      xfree(matches[0]);
+      matches[0] = matches[1];
+      matches[1] = NULL;
+    }
+  } else {			/* no match */
+    xfree(matches[0]);
+    matches[0] = NULL;
+  }
+
+  PUTBACK;
+  FREETMPS;
+  LEAVE;
+}
+
+/*
+ * call a perl function as rl_directory_completion_hook
+ */
+
+static int
+directory_completion_hook_wrapper(textp)
+     char **textp;
+{
+  dSP;
+  int count;
+  SV *sv;
+  int ret;
+  char *rstr;
+  
+  ENTER;
+  SAVETMPS;
+
+  if (textp && *textp) {
+    sv = sv_2mortal(newSVpv(*textp, 0));
+  } else {
+    sv = &sv_undef;
+  }
+
+  PUSHMARK(sp);
+  XPUSHs(sv);
+  PUTBACK;
+
+  count = perl_call_sv(fn_tbl[DIR_COMP].callback, G_SCALAR);
+
+  SPAGAIN;
+
+  if (count != 1)
+    croak("Gnu.xs:directory_completion_hook_wrapper: Internal error\n");
+
+  ret = POPi;
+
+  rstr = SvPV(sv, na);
+  if (strcmp(*textp, rstr) != 0) {
+    xfree(*textp);
+    *textp = dupstr(rstr);
+  }
+
+  PUTBACK;
+  FREETMPS;
+  LEAVE;
+
+  return ret;
+}
+
+/*
+ * call a perl function as history_inhibit_expansion_function
+ */
+
+static int
+history_inhibit_expansion_function_wrapper(text, index)
+     char *text;
+     int index;
+{
+  dSP;
+  int count;
+  int ret;
+  
+  ENTER;
+  SAVETMPS;
+
+  PUSHMARK(sp);
+  if (text) {
+    XPUSHs(sv_2mortal(newSVpv(text, 0)));
+  } else {
+    XPUSHs(&sv_undef);
+  }
+  XPUSHs(sv_2mortal(newSViv(index)));
+  PUTBACK;
+
+  count = perl_call_sv(fn_tbl[HIST_INHIBIT_EXP].callback, G_SCALAR);
+
+  SPAGAIN;
+
+  if (count != 1)
+    croak("Gnu.xs:history_inhibit_expansion_function_wrapper: Internal error\n");
+
+  ret = POPi;			/* warns unless integer */
+  PUTBACK;
+  FREETMPS;
+  LEAVE;
+  return ret;
+}
+
+#if (RLMAJORVER >= 4)
+/*
+ * call a perl function as rl_completion_display_matches_hook
+ */
+
+static void
+completion_display_matches_hook_wrapper(matches, len, max)
+     char **matches;
+     int len;
+     int max;
+{
+  dSP;
+  int i, l;
+  AV *av_matches;
+  
+  /* copy C matches[] array into perl array */
+  av_matches = newAV();
+
+  /* matches[0] is the maximal matching substring.  So it may NULL, even rest
+   * of matches[] has values. */
+  if (matches[0]) {
+    av_push(av_matches, sv_2mortal(newSVpv(matches[0], 0)));
+  } else {
+    av_push(av_matches, &sv_undef);
+  }
+
+  for (i = 1; matches[i]; i++)
+    if (matches[i]) {
+      av_push(av_matches, sv_2mortal(newSVpv(matches[i], 0)));
+    } else {
+      av_push(av_matches, &sv_undef);
+    }
+
+  PUSHMARK(sp);
+  XPUSHs(sv_2mortal(newRV((SV *)av_matches))); /* push reference of array */
+  XPUSHs(sv_2mortal(newSViv(len)));
+  XPUSHs(sv_2mortal(newSViv(max)));
+  PUTBACK;
+
+  perl_call_sv(fn_tbl[COMP_DISP_HOOK].callback, G_DISCARD);
+}
+#else /* (RLMAJORVER < 4) */
+static void
+completion_display_matches_hook_wrapper(matches, len, max)
+     char **matches;
+     int len;
+     int max;
+{
+  /* dummy */
+}
+#endif /* (RLMAJORVER < 4) */
+
+/*
  *	If you need more custom functions, define more funntion_wrapper_xx()
  *	and add entry on fntbl[].
  */
 
-#ifdef __STDC__
-static int function_wrapper(int count, int key, int id);
-static int
-function_wrapper_00(int c, int k) { return function_wrapper(c, k,  0); }
-static int
-function_wrapper_01(int c, int k) { return function_wrapper(c, k,  1); }
-static int
-function_wrapper_02(int c, int k) { return function_wrapper(c, k,  2); }
-static int
-function_wrapper_03(int c, int k) { return function_wrapper(c, k,  3); }
-static int
-function_wrapper_04(int c, int k) { return function_wrapper(c, k,  4); }
-static int
-function_wrapper_05(int c, int k) { return function_wrapper(c, k,  5); }
-static int
-function_wrapper_06(int c, int k) { return function_wrapper(c, k,  6); }
-static int
-function_wrapper_07(int c, int k) { return function_wrapper(c, k,  7); }
-static int
-function_wrapper_08(int c, int k) { return function_wrapper(c, k,  8); }
-static int
-function_wrapper_09(int c, int k) { return function_wrapper(c, k,  9); }
-static int
-function_wrapper_10(int c, int k) { return function_wrapper(c, k, 10); }
-static int
-function_wrapper_11(int c, int k) { return function_wrapper(c, k, 11); }
-static int
-function_wrapper_12(int c, int k) { return function_wrapper(c, k, 12); }
-static int
-function_wrapper_13(int c, int k) { return function_wrapper(c, k, 13); }
-static int
-function_wrapper_14(int c, int k) { return function_wrapper(c, k, 14); }
-static int
-function_wrapper_15(int c, int k) { return function_wrapper(c, k, 15); }
-#else
-static int function_wrapper();
-static int
-function_wrapper_00(c, k) int c; int k; { return function_wrapper(c, k,  0); }
-static int
-function_wrapper_01(c, k) int c; int k; { return function_wrapper(c, k,  1); }
-static int
-function_wrapper_02(c, k) int c; int k; { return function_wrapper(c, k,  2); }
-static int
-function_wrapper_03(c, k) int c; int k; { return function_wrapper(c, k,  3); }
-static int
-function_wrapper_04(c, k) int c; int k; { return function_wrapper(c, k,  4); }
-static int
-function_wrapper_05(c, k) int c; int k; { return function_wrapper(c, k,  5); }
-static int
-function_wrapper_06(c, k) int c; int k; { return function_wrapper(c, k,  6); }
-static int
-function_wrapper_07(c, k) int c; int k; { return function_wrapper(c, k,  7); }
-static int
-function_wrapper_08(c, k) int c; int k; { return function_wrapper(c, k,  8); }
-static int
-function_wrapper_09(c, k) int c; int k; { return function_wrapper(c, k,  9); }
-static int
-function_wrapper_10(c, k) int c; int k; { return function_wrapper(c, k, 10); }
-static int
-function_wrapper_11(c, k) int c; int k; { return function_wrapper(c, k, 11); }
-static int
-function_wrapper_12(c, k) int c; int k; { return function_wrapper(c, k, 12); }
-static int
-function_wrapper_13(c, k) int c; int k; { return function_wrapper(c, k, 13); }
-static int
-function_wrapper_14(c, k) int c; int k; { return function_wrapper(c, k, 14); }
-static int
-function_wrapper_15(c, k) int c; int k; { return function_wrapper(c, k, 15); }
-#endif /* __STDC__ */
+static int function_wrapper __P((int count, int key, int id));
+
+static int fw_00(c, k) int c; int k; { return function_wrapper(c, k,  0); }
+static int fw_01(c, k) int c; int k; { return function_wrapper(c, k,  1); }
+static int fw_02(c, k) int c; int k; { return function_wrapper(c, k,  2); }
+static int fw_03(c, k) int c; int k; { return function_wrapper(c, k,  3); }
+static int fw_04(c, k) int c; int k; { return function_wrapper(c, k,  4); }
+static int fw_05(c, k) int c; int k; { return function_wrapper(c, k,  5); }
+static int fw_06(c, k) int c; int k; { return function_wrapper(c, k,  6); }
+static int fw_07(c, k) int c; int k; { return function_wrapper(c, k,  7); }
+static int fw_08(c, k) int c; int k; { return function_wrapper(c, k,  8); }
+static int fw_09(c, k) int c; int k; { return function_wrapper(c, k,  9); }
+static int fw_10(c, k) int c; int k; { return function_wrapper(c, k, 10); }
+static int fw_11(c, k) int c; int k; { return function_wrapper(c, k, 11); }
+static int fw_12(c, k) int c; int k; { return function_wrapper(c, k, 12); }
+static int fw_13(c, k) int c; int k; { return function_wrapper(c, k, 13); }
+static int fw_14(c, k) int c; int k; { return function_wrapper(c, k, 14); }
+static int fw_15(c, k) int c; int k; { return function_wrapper(c, k, 15); }
 
 static struct fnnode {
   Function *wrapper;		/* C wrapper function */
   SV *pfn;			/* Perl function */
 } fntbl[] = {
-  { function_wrapper_00,	NULL },
-  { function_wrapper_01,	NULL },
-  { function_wrapper_02,	NULL },
-  { function_wrapper_03,	NULL },
-  { function_wrapper_04,	NULL },
-  { function_wrapper_05,	NULL },
-  { function_wrapper_06,	NULL },
-  { function_wrapper_07,	NULL },
-  { function_wrapper_08,	NULL },
-  { function_wrapper_09,	NULL },
-  { function_wrapper_10,	NULL },
-  { function_wrapper_11,	NULL },
-  { function_wrapper_12,	NULL },
-  { function_wrapper_13,	NULL },
-  { function_wrapper_14,	NULL },
-  { function_wrapper_15,	NULL }
+  { fw_00,	NULL },
+  { fw_01,	NULL },
+  { fw_02,	NULL },
+  { fw_03,	NULL },
+  { fw_04,	NULL },
+  { fw_05,	NULL },
+  { fw_06,	NULL },
+  { fw_07,	NULL },
+  { fw_08,	NULL },
+  { fw_09,	NULL },
+  { fw_10,	NULL },
+  { fw_11,	NULL },
+  { fw_12,	NULL },
+  { fw_13,	NULL },
+  { fw_14,	NULL },
+  { fw_15,	NULL }
 };
 
 static int
@@ -488,7 +917,7 @@ function_wrapper(count, key, id)
   return 0;
 }
 
-static SV* callback_handler_callback = NULL;
+static SV *callback_handler_callback = NULL;
 
 static void
 callback_handler_wrapper(line)
@@ -506,7 +935,7 @@ callback_handler_wrapper(line)
 
   perl_call_sv(callback_handler_callback, G_DISCARD);
 }
-
+
 /*
  * make separate name space for low level XS functions and there methods
  */
@@ -669,7 +1098,7 @@ _rl_unbind_key(key, map = rl_get_keymap())
 # by readline-2.2.
 
 int
-_rl_unbind_function_in_map(function, map = rl_get_keymap())
+_rl_unbind_function(function, map = rl_get_keymap())
 	Function *function
 	Keymap map
 	PROTOTYPE: $;$
@@ -681,7 +1110,7 @@ _rl_unbind_function_in_map(function, map = rl_get_keymap())
 	RETVAL
 
 int
-_rl_unbind_command_in_map(command, map = rl_get_keymap())
+_rl_unbind_command(command, map = rl_get_keymap())
 	char *command
 	Keymap map
 	PROTOTYPE: $;$
@@ -843,6 +1272,23 @@ void
 rl_list_funmap_names()
 	PROTOTYPE:
 
+# return list of all function name. (Term::Readline::Gnu specific function)
+void
+rl_get_all_function_names()
+	PROTOTYPE:
+	PPCODE:
+	{
+	  int i, count;
+	  /* count number of entries */
+	  for (count = 0; funmap[count]; count++)
+	    ;
+	  
+	  EXTEND(sp, count);
+	  for (i = 0; i < count; i++) {
+	    PUSHs(sv_2mortal(newSVpv(funmap[i]->name, 0)));
+	  }
+	}
+
 #
 #	2.4.5 Allowing Undoing
 #
@@ -978,6 +1424,53 @@ int
 ding()
 	PROTOTYPE:
 
+#if (RLMAJORVER >= 4)
+
+void
+rl_display_match_list(pmatches, plen = -1, pmax = -1)
+	SV *pmatches
+	int plen
+	int pmax
+	PROTOTYPE: $;$$
+	CODE:
+	{
+	  unsigned int len, max, i;
+	  STRLEN l;
+	  char **matches;
+	  AV *av_matches;
+	  SV *pv, **pvp;
+
+	  if (SvTYPE(SvRV(pmatches)) != SVt_PVAV) {
+	    warn("Gnu.xs:_rl_display_match_list: the 1st arguments must be a reference of an array\n");
+	    return;
+	  }
+	  av_matches = (AV *)SvRV(ST(0));
+	  /* index zero contains possible match and is ignored */
+	  if ((len = av_len(av_matches) + 1 - 1) == 0)
+	    return;
+	  matches = (char **)xmalloc (sizeof(char *) * (len + 2));
+	  max = 0;
+	  for (i = 1; i <= len; i++) {
+	    pvp = av_fetch(av_matches, i, 0);
+	    if (SvPOKp(*pvp)) {
+	      matches[i] = dupstr(SvPV(*pvp, l));
+	      if (l > max)
+		max = l;
+	    }
+	  }
+	  matches[len + 1] = NULL;
+
+	  rl_display_match_list(matches,
+				plen < 0 ? len : plen,
+				pmax < 0 ? max : pmax);
+
+	  for (i = 1; i <= len; i++)
+	    xfree(matches[i]);
+	  xfree(matches);
+	}
+
+#endif /* (RLMAJORVER < 4) */
+
 #
 #	2.4.9 Alternate Interface
 #
@@ -1020,7 +1513,35 @@ rl_callback_handler_remove()
 	PROTOTYPE:
 
 #
-#	2.5 Custom Completers
+#	2.5 Readline Signal Handling
+#
+
+void
+rl_cleanup_after_signal()
+	PROTOTYPE:
+
+void
+rl_free_line_state()
+	PROTOTYPE:
+
+void
+rl_reset_after_signal()
+	PROTOTYPE:
+
+void
+rl_resize_terminal()
+	PROTOTYPE:
+
+int
+rl_set_signals()
+	PROTOTYPE:
+
+int
+rl_clear_signals()
+	PROTOTYPE:
+
+#
+#	2.6 Custom Completers
 #
 
 int
@@ -1206,6 +1727,12 @@ unstifle_history()
 int
 history_is_stifled()
 	PROTOTYPE:
+
+#
+#	2.3.3 Information about the History List
+#
+
+# history_list() is implemented as a perl function in Gnu.pm.
 
 int
 where_history()
@@ -1470,9 +1997,8 @@ _rl_store_rl_line_buffer(pstr)
 	    len = strlen(pstr) + 1;
 
 	    /*
-	     * rl_extend_line_buffer() is not documented in the GNU
-	     * Readline Library Manual Edition 2.1.  But Chet Ramey
-	     * recommends me to use this function.
+	     * Old manual did not document this function, but can be
+	     * used.
 	     */
 	    rl_extend_line_buffer(len);
 
@@ -1664,10 +2190,10 @@ _rl_fetch_function(id)
 	  }
 	}
 
-MODULE = Term::ReadLine::Gnu		PACKAGE = Term::ReadLine::Gnu::TermCap
+MODULE = Term::ReadLine::Gnu		PACKAGE = Term::ReadLine::Gnu::XS
 
 void
-_tgetstr(id)
+tgetstr(id)
 	const char *id
 	PROTOTYPE: $
 	CODE:

@@ -4,9 +4,15 @@
 #
 # POD documentation after __END__
 
-# This program is contributed by Achim Bohnet.  It demonstrates
-# how to use the callback functions in the GNU Readline Library.
-# You can do same thing by tkRunning feature.     Hiroo Hayashi
+# This program is contributed by Achim Bohnet.  It demonstrates how to
+# use the callback functions in the GNU Readline Library.  This script
+# is essetially equivalent with executing the following lines in
+# `eg/perlsh';
+#	$PerlSh::term->tkRunning(1);
+#	use Tk;
+#	$mw = MainWindow->new();
+#
+# Hiroo Hayashi
 
 require 5.003_92;
 

@@ -1,8 +1,8 @@
 #! /usr/local/bin/perl
 #
-#	$Id: perlsh,v 1.12 1998-09-28 00:40:52+09 hayashi Exp $	
+#	$Id: perlsh,v 1.21 1999-04-09 01:37:56+09 hayashi Exp $	
 #
-#	Copyright (c) 1996,1997 Hiroo Hayashi. All Rights Reserved.
+#	Copyright (c) 1999 Hiroo Hayashi. All Rights Reserved.
 #
 #	This program is free software; you can redistribute it and/or
 #	modify it under the same terms as Perl itself.
@@ -25,7 +25,7 @@ very strong calculator which has whole perl functions.
 
 This is a sample program Term::ReadLine::Gnu module.  When you input a
 line, the line editing function of GNU Readline Library is available.
-The variable name completion function is also available.
+Perl symbol name completion function is also available.
 
 =cut
 
@@ -35,10 +35,10 @@ use strict;
 use Term::ReadLine;
 
 use vars qw($PS1 $PS2 $HISTFILE $HISTSIZE $INPUTRC $STRICT
-	    $HOSTNAME $LOGNAME);
+	    $HOSTNAME $LOGNAME $CWP);
 
 #$PS1 = '$ ';
-$PS1='\!$ ';
+$PS1='\w[\!]$ ';
 $PS2 = '> ';
 $HISTFILE = ($ENV{HOME} || ((getpwuid($<))[7])) . "/.perlsh_history";
 $HISTSIZE = 256;
@@ -47,6 +47,7 @@ $STRICT = 0;
 
 $HOSTNAME = $ENV{HOSTNAME};
 $LOGNAME = $ENV{LOGNAME};
+$CWP = 'main';			# current working package
 
 package main;
 if (-f $PerlSh::INPUTRC) {
@@ -55,11 +56,22 @@ if (-f $PerlSh::INPUTRC) {
 
 package PerlSh;
 
-my $term = new Term::ReadLine 'PerlSh';
-my $attribs = $term->Attribs;
+use vars qw($term $attribs);	# to access as `$PerlSh::term' from prompt
+$term = new Term::ReadLine 'PerlSh';
+$attribs = $term->Attribs;
+
+$term->bind_key(ord "\cv", 'display-readline-version', 'emacs-ctlx');
+$term->bind_key(ord "\cc", 'abort'); # not works yet FIXME!!!
+
+if (defined &main::afterinit) {
+    package main;
+    &afterinit;
+    package PerlSh;
+}
 
 &toplevel;			# never returns
 
+########################################################################
 sub toplevel {
     # disable implicit add_history() call
     $term->MinLine(undef);
@@ -69,19 +81,23 @@ sub toplevel {
 	$term->ReadHistory($HISTFILE)
 	    or warn "perlsh: cannot read history file: $!\n";
     }
-    $attribs->{completion_entry_function} = \&perl_symbol_completion_function;
+    $attribs->{attempted_completion_function} = \&attempt_perl_completion;
 
-    $attribs->{special_prefixes} = '$@';
-
-    $SIG{'INT'} = \&quit;
+    $SIG{INT} = sub {
+	$term->modifying;
+	$term->delete_text;
+	$attribs->{point} = $attribs->{end} = 0;
+	$term->redisplay;
+    };
 
     my ($strict, $command, @result);
     $strict = $STRICT ? '' : 'no strict;';
     while (defined($command = &reader)) {
-	@result = eval ("$strict package main; $command");
+	@result = eval ("$strict package $CWP; $command");
 	use strict;
 	if ($@) { print "Error: $@\n"; next; }
 	printer (@result);
+	$CWP = $1 if ($command =~ /^\s*package\s+([\w:]+)/);
     }
     &quit;
 }
@@ -121,18 +137,118 @@ sub prompt {
     # if reference to a subroutine return the return value of it
     return &$_ if (ref($_) eq 'CODE');
 
-    # \h: hostname, \u: username, \!: history number
+    # \h: hostname, \u: username, \w: package name, \!: history number
     s/\\h/$HOSTNAME/g;
     s/\\u/$LOGNAME/g;
+    s/\\w/$CWP/g;
     s/\\!/$attribs->{history_base} + $attribs->{history_length}/eg;
     $_;
 }
+
 #
-#	variable name completion
+#	custom completion for Perl
+#
+
+sub perl_symbol_display_match_list ($$$) {
+    my($matches, $num_matches, $max_length) = @_;
+    map { $_ =~ s/^((\$#|[\@\$%&])?).*::(.+)/\3/; }(@{$matches});
+    $term->display_match_list($matches);
+    $term->forced_update_display;
+}
+
+sub attempt_perl_completion ($$$$) {
+    my ($text, $line, $start, $end) = @_;
+    
+    $attribs->{special_prefixes} = '$@%&';
+    $attribs->{completion_display_matches_hook}
+	= \&perl_symbol_display_match_list;
+    
+    no strict qw(refs);
+    if (substr($line, 0, $start) =~ m/\$([\w:]+)\s*(->)?\s*{\s*['"]?$/) {
+	# $foo{key, $foo->{key
+	$attribs->{completion_append_character} = '}';
+	return $term->completion_matches($text,
+					 \&perl_hash_key_completion_function);
+    } elsif (substr($line, 0, $start) =~ m/\$([\w:]+)\s*->\s*['"]?$/) {
+	# $foo->method
+	$attribs->{completion_append_character} = ' ';
+	return $term->completion_matches($text,
+					 \&perl_method_completion_function);
+    } else { # Perl symbol completion
+	$attribs->{completion_append_character} = '';
+	return  $term->completion_matches($text,
+					  \&perl_symbol_completion_function);
+    }
+}
+
+# static global variables for completion functions
+use vars qw($i @matches);
+
+sub perl_hash_key_completion_function ($$) {
+    my($text, $state) = @_;
+    
+    if ($state) {
+	$i++;
+    } else {
+	# the first call
+	$i = 0;			# clear index
+	my ($var,$arrow) = (substr($attribs->{line_buffer},
+				   0, $attribs->{point} - length($text))
+			    =~ m/\$([\w:]+)\s*(->)?\s*{\s*['"]?$/); # });
+	no strict qw(refs);
+	$var = "${CWP}::$var" unless ($var =~ m/::/);
+	if ($arrow) {
+	    my $hashref = eval "\$$var";
+	    @matches = keys %$hashref;
+	} else {
+	    @matches = keys %$var;
+	}
+	
+    }
+    for (; $i <= $#matches; $i++) {
+	return $matches[$i] if ($matches[$i] =~ /^\Q$text/);
+    }
+    return undef;
+}
+
+sub _search_ISA ($) {
+    my ($mypkg) = @_;
+    no strict 'refs';
+    my $isa = "${mypkg}::ISA";
+    return $mypkg, map _search_ISA($_), @$isa;
+}
+
+sub perl_method_completion_function ($$) {
+    my($text, $state) = @_;
+    
+    if ($state) {
+	$i++;
+    } else {
+	# the first call
+	my ($var, $pkg, $sym, $pk);
+	$i = 0;			# clear index
+	$var = (substr($attribs->{line_buffer},
+		       0, $attribs->{point} - length($text))
+		=~ m/\$([\w:]+)\s*->\s*$/)[0];
+	$pkg = ref eval (($var =~ m/::/) ? "\$$var" : "\$${CWP}::$var");
+	no strict qw(refs);
+	@matches = map { $pk = $_ . '::';
+			 grep (/^\w+$/
+			       && ($sym = "${pk}$_", defined *$sym{CODE}),
+			       keys %$pk);
+		     } _search_ISA($pkg);
+    }
+    for (; $i <= $#matches; $i++) {
+	return $matches[$i] if ($matches[$i] =~ /^\Q$text/);
+    }
+    return undef;
+}
+
+#
+#	Perl symbol name completion
 #
 {
-    my $i;
-    use vars qw(@symbol_list);
+    my ($prefix, %type, @keyword);
 
     sub perl_symbol_completion_function ($$) {
 	my($text, $state) = @_;
@@ -141,77 +257,124 @@ sub prompt {
 	    $i++;
 	} else {
 	    # the first call
+	    my ($pre, $pkg, $sym);
 	    $i = 0;		# clear index
-	    if ($text =~ /^(\@|\$\#)/) {
-		@symbol_list = symbol_array($1);
-	    } elsif ($text =~ /^(\%)/) {
-		@symbol_list = symbol_hash($1);
-	    } elsif ($text =~ /^(\$)/) {
-		@symbol_list = (symbol_scalar($1),
-				symbol_array($1, '['),
-				symbol_hash($1, '{'));
-	    } else {
-		@symbol_list = ();
+
+	    no strict qw(refs);
+	    ($prefix, $pre, $pkg) = ($text =~ m/^((\$#|[\@\$%&])?(.*::)?)/);
+	    @matches = grep /::$/, $pkg ? keys %$pkg : keys %::;
+	    $pkg = ($CWP eq 'main' ? '::' : $CWP . '::') unless $pkg;
+
+	    if ($pre) {		# $foo, @foo, $#foo, %foo, &foo
+		@matches = (@matches,
+			    grep (/^\w+$/
+				  && ($sym = $pkg . $_,
+				      defined *$sym{$type{$pre}}),
+				  keys %$pkg));
+	    } else {		# foo
+		@matches = (@matches,
+			    !$prefix && @keyword,
+			    grep (/^\w+$/
+				  && ($sym = $pkg . $_,
+				      defined *$sym{CODE}
+				      || defined *$sym{FILEHANDLE}
+				     ),
+				  keys %$pkg));
 	    }
 	}
-
 	my $entry;
-	$text = quotemeta($text); # $foo -> \$foo
-	for (; $i <= $#symbol_list; $i++) {
-	    $entry = $symbol_list[$i];
-	    return $entry if ($entry =~ /^$text/);
+	for (; $i <= $#matches; $i++) {
+	    $entry = $prefix . $matches[$i];
+	    return $entry if ($entry =~ /^\Q$text/);
 	}
 	return undef;
     }
-}
 
-# return scalar variable name list
-sub symbol_scalar ($) {
-    my ($pre) = @_;
-    my ($key, $val, @list);
-    no strict 'vars';
-    local(*stab) = eval("*main::");
-    while (($key,$val) = each(%stab)) {
-	next if $key =~ /^_</;
-	local(*entry) = $val;
-	# How can I distinguish a variable which is not defined
-	#	from one which has undefined value?
-	push (@list, $pre . $key)
-	    if (defined $entry or ! defined @entry && ! defined %entry);
-    }
-    return @list;
-}
+    BEGIN {
+	%type = ('$' => 'SCALAR', '*' => 'SCALAR',
+		 '@' => 'ARRAY', '$#' => 'ARRAY',
+		 '%' => 'HASH',
+		 '&' => 'CODE'); # '
 
-# return array variable name list
-sub symbol_array ($;$) {
-    my ($pre, $pos) = @_;
-    my ($key, $val, @list);
-    no strict 'vars';
-    local(*stab) = eval("*main::");
-    while (($key,$val) = each(%stab)) {
-	local(*entry) = $val;
-	push (@list, $pre . $key . $pos)
-	    if (defined @entry or ! defined %entry && ! defined $entry);
-    }
-    return @list;
-}
+	# from perl5.004_02 perlfunc
+	@keyword = qw(
+		    chomp chop chr crypt hex index lc lcfirst
+		    length oct ord pack q qq
+		    reverse rindex sprintf substr tr uc ucfirst
+		    y
+		    
+		    m pos quotemeta s split study qr
 
-# return hash variable name list
-sub symbol_hash ($;$) {
-    my ($pre, $pos) = @_;
-    my ($key, $val, @list);
-    local(*stab) = eval("*main::");
-    no strict 'vars';
-    while (($key,$val) = each(%stab)) {
-	local(*entry) = $val;
-	push (@list, $pre . $key . $pos)
-	    if (defined %entry or ! defined $entry && ! defined @entry);
+		    abs atan2 cos exp hex int log oct rand sin
+		    sqrt srand
+
+		    pop push shift splice unshift
+
+		    grep join map qw reverse sort unpack
+		    
+		    delete each exists keys values
+		    
+		    binmode close closedir dbmclose dbmopen die
+		    eof fileno flock format getc print printf
+		    read readdir rewinddir seek seekdir select
+		    syscall sysread sysseek syswrite tell telldir
+		    truncate warn write
+		    
+		    pack read syscall sysread syswrite unpack vec
+		    
+		    chdir chmod chown chroot fcntl glob ioctl
+		    link lstat mkdir open opendir readlink rename
+		    rmdir stat symlink umask unlink utime
+		    
+		    caller continue die do dump eval exit goto
+		    last next redo return sub wantarray
+		    
+		    caller import local my package use
+		    
+		    defined dump eval formline local my reset
+		    scalar undef wantarray
+		    
+		    alarm exec fork getpgrp getppid getpriority
+		    kill pipe qx setpgrp setpriority sleep
+		    system times wait waitpid
+		    
+		    do import no package require use
+		    
+		    bless dbmclose dbmopen package ref tie tied
+		    untie use
+		    
+		    accept bind connect getpeername getsockname
+		    getsockopt listen recv send setsockopt shutdown
+		    socket socketpair
+		    
+		    msgctl msgget msgrcv msgsnd semctl semget
+		    semop shmctl shmget shmread shmwrite
+		    
+		    endgrent endhostent endnetent endpwent getgrent
+		    getgrgid getgrnam getlogin getpwent getpwnam
+		    getpwuid setgrent setpwent
+		    
+		    endprotoent endservent gethostbyaddr
+		    gethostbyname gethostent getnetbyaddr
+		    getnetbyname getnetent getprotobyname
+		    getprotobynumber getprotoent getservbyname
+		    getservbyport getservent sethostent setnetent
+		    setprotoent setservent
+		    
+		    gmtime localtime time times
+		    
+		    abs bless chomp chr exists formline glob
+		    import lc lcfirst map my no prototype qx qw
+		    readline readpipe ref sub sysopen tie tied
+		    uc ucfirst untie use
+		    
+		    dbmclose dbmopen
+		   );
     }
-    return @list;
 }
 
 __END__
-
+
 =pod
 
 Before invoking, this program reads F<~/.perlshrc> and evaluates the
@@ -230,11 +393,19 @@ variables in F<~/.perlshrc>;
 
 =item C<$PerlSh::PS1>
 
-The primary prompt string.  The default value is "$ ".
+The primary prompt string.  The following backslash-escaped special
+characters can be used.
+
+	\h: host name
+	\u: user name
+	\w: package name
+	\!: history number
+
+The default value is `C<\w[\!]$ >'.
 
 =item C<$PerlSh::PS2>
 
-The secondary prompt string.  The default value is "> ".
+The secondary prompt string.  The default value is `C<E<gt> >'.
 
 =item C<$PerlSh::HISTFILE>
 
@@ -259,9 +430,32 @@ page.  The default value is 0;
 
 =item F<~/.perlshrc>
 
+This file is eval-ed at initialization.  If a subroutine C<afterinit>
+is defined in this file, it will be eval-ed after initialization.
+Here is a sample.
+
+	# -*- mode: perl -*-
+	# decimal to hexa
+	sub h { map { sprintf("0x%x", $_ ) } @_;}
+
+	sub tk {
+	    $t->tkRunning(1);
+	    use Tk;
+	    $mw = MainWindow->new();
+	}
+
+	# for debugging Term::ReadLine::Gnu
+	sub afterinit {
+	    *t = \$PerlSh::term;
+	    *a = \$PerlSh::attribs;
+	}
+
 =item F<~/.perlsh_history>
 
 =item F<~/.inputrc>
+
+A initialization file for the GNU Readline Library.  Refer its manual
+for details.
 
 =back
 
@@ -269,16 +463,10 @@ page.  The default value is 0;
 
 Term::ReadLine::Gnu
 
-GNU Readline Library Texinfo Manual
+GNU Readline Library Manual
 
 =head1 AUTHOR
 
 Hiroo Hayashi <hiroo.hayashi@computer.org>
-
-=head1 BUGS
-
-Completion does not work for variable name whose value is 'undef'.
-
-Completion does not work for variable name with package name (`foo::bar').
 
 =cut

@@ -1,9 +1,9 @@
 #
 #	Gnu.pm --- The GNU Readline/History Library wrapper module
 #
-#	$Id: Gnu.pm,v 1.59 1999-02-23 01:20:09+09 hayashi Exp $
+#	$Id: Gnu.pm,v 1.72 1999-04-11 00:19:14+09 hayashi Exp $
 #
-#	Copyright (c) 1996,1997,1998 Hiroo Hayashi.  All rights reserved.
+#	Copyright (c) 1999 Hiroo Hayashi.  All rights reserved.
 #
 #	This program is free software; you can redistribute it and/or
 #	modify it under the same terms as Perl itself.
@@ -33,16 +33,21 @@ This is an implementation of Term::ReadLine using the GNU
 Readline/History Library.
 
 For basic functions object oriented interface is provided. These are
-described in the section B<Methods>.
+described in the section L<"Methods"|"Methods">.
 
 This package also has the interface with the almost all variables and
 functions which are documented in the GNU Readline/History Library
 Manual.  These variables and functions are documented in the section
-B<Variables> and B<Functions> briefly.  For more detail of the GNU
+L<"Variables"|"Variables"> and L<"Functions"|"Functions"> briefly.
+For more detail of the GNU
 Readline/History Library, see 'GNU Readline Library Manual' and 'GNU
 History Library Manual'.
 
-=head2 Minimal Set of Methods defined by B<Readline.pm>
+The sample programs under C<eg/> directory and test programs under
+C<t/> directory in the C<Term::ReadLine::Gnu> distribution include
+many example of this module.
+
+=head2 Minimal Set of Methods defined by B<Term::ReadLine>
 
 =cut
 
@@ -54,9 +59,11 @@ use Carp;
     use DynaLoader;
     use vars qw($VERSION @ISA @EXPORT_OK);
 
-    $VERSION = '1.04';
+    $VERSION = '1.05';
 
-    @ISA = qw(Term::ReadLine::Stub Term::ReadLine::Gnu::AU
+    # Term::ReadLine::Gnu::AU makes a function in
+    # `Term::ReadLine::Gnu::XS' as a method.
+    @ISA = qw(Term::ReadLine::Gnu::AU Term::ReadLine::Stub
 	      Exporter DynaLoader);
 
     @EXPORT_OK = qw(RL_PROMPT_START_IGNORE RL_PROMPT_END_IGNORE
@@ -64,18 +71,19 @@ use Carp;
 		    ISFUNC ISKMAP ISMACR
 		    UNDO_DELETE UNDO_INSERT UNDO_BEGIN UNDO_END);
 
-    bootstrap Term::ReadLine::Gnu $VERSION;
+    bootstrap Term::ReadLine::Gnu $VERSION; # DynaLoader
 }
+require Term::ReadLine::Gnu::XS;
 
 #	Global Variables
-my $Operate_Index;
-my $Next_Operate_Index;
 
-use vars qw(%Attribs %Features @rl_term_set);
+use vars qw(%Attribs %Features);
 
 %Attribs  = (
+	     MinLength => 1,
 	     do_expand => 0,
 	     completion_word => [],
+	     term_set => ['', '', '', ''],
 	    );
 %Features = (
 	     appname => 1, minline => 1, autohistory => 1,
@@ -144,10 +152,8 @@ sub new {
     my $class = ref($this) || $this;
 
     my $name = shift;
-    # Don't use this hash.  Use Attribs method instead.
-    my $self = {
-		MinLength	=> 1,
-	       };
+
+    my $self = \%Attribs;
     bless $self, $class;
 
     # set rl_readline_name before .inputrc is read in rl_initialize()
@@ -161,6 +167,9 @@ sub new {
 	local $^W = 0;		# Term::ReadLine is not warning flag free
 	# 'ue' (underline end) does not work on some terminal 
 	#$self->ornaments(1);
+	# Without the next line Term::ReadLine::Stub::ornaments is used.
+	# Why does Term::ReadLine::Gnu::AU selects it at first?!!!
+	undef &Term::ReadLine::Gnu::ornaments;
 	$self->ornaments('us,me,,');
     }
 
@@ -174,7 +183,6 @@ sub new {
 	$Attribs{instream} = shift;
 	$Attribs{outstream} = shift;
     }
-    $Operate_Index = $Next_Operate_Index = undef; # for operate_and_get_next()
 
     $self;
 }
@@ -196,8 +204,6 @@ characters, and C<RL_PROMPT_END_IGNORE> to end of such a sequence.
 
 =cut
 
-use vars qw($_Preput $_Saved_Startup_Hook);
-
 # to peacify -w
 $Term::ReadLine::registered = $Term::ReadLine::registered;
 
@@ -207,41 +213,40 @@ sub readline {			# should be ReadLine
 
     # ornament support (now prompt only)
     # non-printing characters must be told to readline
-    $prompt = RL_PROMPT_START_IGNORE . $rl_term_set[0] . RL_PROMPT_END_IGNORE
+    $prompt = RL_PROMPT_START_IGNORE . ${$Attribs{term_set}}[0] . RL_PROMPT_END_IGNORE
 	. $prompt
-	    . RL_PROMPT_START_IGNORE . $rl_term_set[1] . RL_PROMPT_END_IGNORE;
+	    . RL_PROMPT_START_IGNORE . ${$Attribs{term_set}}[1] . RL_PROMPT_END_IGNORE;
+
+    # `completion_function' support for compatibility with
+    # Term:ReadLine::Perl.  Prefer $completion_entry_function, since a
+    # program which uses $completion_entry_function should know
+    # Term::ReadLine::Gnu and have better completion function using
+    # the variable.
+    $Attribs{completion_entry_function} = $Attribs{_trp_completion_function}
+	if (!defined $Attribs{completion_entry_function}
+	    && defined $Attribs{completion_function});
 
     # TkRunning support
     if (not $Term::ReadLine::registered and $Term::ReadLine::toloop
 	and defined &Tk::DoOneEvent) {
 	$self->register_Tk;
-	$Attribs{getc_function} = \&Tk_getc;
-    }
-
-    # cf. operate_and_get_next()
-    if (defined $Operate_Index) {
-	$Next_Operate_Index = $Operate_Index + 1;
-	my $next_line = $self->history_get($Next_Operate_Index);
-	$preput = $next_line if defined $next_line;
-	undef $Operate_Index;
+	$Attribs{getc_function} = $Attribs{Tk_getc};
     }
 
     # call readline()
     my $line;
     if (defined $preput) {
-	$_Preput = $preput;
-	$_Saved_Startup_Hook = $Attribs{startup_hook};
+	my $saved_startup_hook = $Attribs{startup_hook};
 	$Attribs{startup_hook} = sub {
-	    $self->rl_insert_text($_Preput);
-	    &$_Saved_Startup_Hook
-		if defined $_Saved_Startup_Hook;
+	    $self->rl_insert_text($preput);
+	    &$saved_startup_hook
+		if defined $saved_startup_hook;
 	};
-	$line = Term::ReadLine::Gnu::XS::rl_readline($prompt);
-	$Attribs{startup_hook} = $_Saved_Startup_Hook;
+	$line = $self->rl_readline($prompt);
+	$Attribs{startup_hook} = $saved_startup_hook;
     } else {
-	$line = Term::ReadLine::Gnu::XS::rl_readline($prompt);
+	$line = $self->rl_readline($prompt);
     }
-    undef $Next_Operate_Index;
     return undef unless defined $line;
 
     # history expansion
@@ -259,16 +264,9 @@ sub readline {			# should be ReadLine
 
     # add to history buffer
     $self->add_history($line) 
-       if ($self->{MinLength} > 0 && length($line) >= $self->{MinLength});
+	if ($self->{MinLength} > 0 && length($line) >= $self->{MinLength});
 
     return $line;
-}
-
-sub Tk_getc {
-    &Term::ReadLine::Tk::Tk_loop
-	if $Term::ReadLine::toloop && defined &Tk::DoOneEvent;
-    my $FILE = $Attribs{instream};
-    return Term::ReadLine::Gnu::XS::rl_getc($FILE);
 }
 
 =item C<AddHistory(LINE1, LINE2, ...)>
@@ -340,39 +338,11 @@ C<MinLine>), and C<addHistory> if C<AddHistory> method is not dummy.
 C<preput> means the second argument to C<readline> method is processed.
 C<getHistory> and C<setHistory> denote that the corresponding methods are 
 present. C<tkRunning> denotes that a Tk application may run while ReadLine
-is getting input B<(undocumented feature)>.
+is getting input.
 
 =back
 
 =cut
-
-# This routine originates in Term::ReadLine.pm.
-
-# Debian GNU/Linux discourages users from using /etc/termcap.  A
-# subroutine ornaments() defined in Term::ReadLine.pm uses
-# Term::Caps.pm which requires /etc/termcap.
-
-# This module calls termcap (or its compatible) library, which the GNU
-# Readline Library already uses, instead of Term::Caps.pm.
-{
-    # Prompt-start, prompt-end, command-line-start, command-line-end
-    #     -- zero-width beautifies to emit around prompt and the command line.
-    @rl_term_set = ("","","","");
-    # string encoded:
-    my $rl_term_set = ',,,';
-
-    sub ornaments {
-	shift;
-	return $rl_term_set unless @_;
-	$rl_term_set = shift;
-	$rl_term_set ||= ',,,';
-	$rl_term_set = 'us,me,,' if $rl_term_set eq '1';
-	my @ts = split /,/, $rl_term_set, 4;
-	@rl_term_set
-	    = map {$_ ? Term::ReadLine::Gnu::TermCap::_tgetstr($_) || '' : ''} @ts;
-	return $rl_term_set;
-    }
-}
 
 # Not tested yet.  How do I use this?
 sub newTTY {
@@ -382,6 +352,35 @@ sub newTTY {
     my $sel = select($out);
     $| = 1;			# for DB::OUT
     select($sel);
+}
+
+=item C<CallbackHandlerInstall(PROMPT, LHANDLER)>
+
+This method provides the function C<rl_callback_handler_install()>
+with the following addtional feature compatible with C<readline>
+method; ornament feature, C<Term::ReadLine::Perl> compatible
+completion function, histroy expansion, and addition to history
+buffer.
+
+=cut
+
+sub CallbackHandlerInstall {
+    my $self = shift;
+    my ($prompt, $lhandler) = @_;
+
+    $Attribs{_callback_handler} = $lhandler;
+
+    # ornament support (now prompt only)
+    $prompt = RL_PROMPT_START_IGNORE . ${$Attribs{term_set}}[0] . RL_PROMPT_END_IGNORE
+	. $prompt
+	    . RL_PROMPT_START_IGNORE . ${$Attribs{term_set}}[1] . RL_PROMPT_END_IGNORE;
+
+    $Attribs{completion_entry_function} = $Attribs{_trp_completion_function}
+	if (!defined $Attribs{completion_entry_function}
+	    && defined $Attribs{completion_function});
+
+    $self->rl_callback_handler_install($prompt,
+				       \&Term::ReadLine::Gnu::XS::_ch_wrapper);
 }
 
 
@@ -418,204 +417,6 @@ sub ReadHistory {
 sub WriteHistory {
     my $self = shift;
     ! $self->write_history(@_);
-}
-
-package Term::ReadLine::Gnu::XS;
-use Carp;
-use strict;
-
-#
-#	Readline Library function wrappers
-#
-
-# Convert keymap name to Keymap if the argument is not reference to Keymap
-sub _str2map ($) {
-    return ref $_[0] ? $_[0]
-	: (rl_get_keymap_by_name($_[0]) || carp "unknown keymap name \`$_[0]\'\n");
-}
-
-# Convert function name to Function if the argument is not reference
-# to Function
-sub _str2fn ($) {
-    return ref $_[0] ? $_[0]
-	: (rl_named_function($_[0]) || carp "unknown function name \`$_[0]\'\n");
-}
-
-sub rl_copy_keymap ($)    { return _rl_copy_keymap(_str2map($_[0])); }
-sub rl_discard_keymap ($) { return _rl_discard_keymap(_str2map($_[0])); }
-sub rl_set_keymap ($)     { return _rl_set_keymap(_str2map($_[0])); }
-
-sub rl_bind_key ($$;$) {
-    if (defined $_[2]) {
-	return _rl_bind_key($_[0], _str2fn($_[1]), _str2map($_[2]));
-    } else {
-	return _rl_bind_key($_[0], _str2fn($_[1]));
-    }
-}
-
-sub rl_unbind_key ($;$) {
-    if (defined $_[1]) {
-	return _rl_unbind_key($_[0], _str2map($_[1]));
-    } else {
-	return _rl_unbind_key($_[0]);
-    }
-}
-
-sub rl_unbind_function_in_map ($;$) {
-    # libreadline.* in Debian GNU/Linux 2.0 tells wrong value as '2.1-bash'
-    my ($version) = $Term::ReadLine::Gnu::Attribs{library_version}
-	=~ /(\d+\.\d+)/;
-    if ($version < 2.2) {
-	carp "rl_unbind_function_in_map() is not supported.  Ignored\n";
-	return;
-    }
-    if (defined $_[1]) {
-	return _rl_unbind_function_in_map($_[0], _str2map($_[1]));
-    } else {
-	return _rl_unbind_function_in_map($_[0]);
-    }
-}
-
-sub rl_unbind_command_in_map ($;$) {
-    my ($version) = $Term::ReadLine::Gnu::Attribs{library_version}
-	=~ /(\d+\.\d+)/;
-    if ($version < 2.2) {
-	carp "rl_unbind_command_in_map() is not supported.  Ignored\n";
-	return;
-    }
-    if (defined $_[1]) {
-	return _rl_unbind_command_in_map($_[0], _str2map($_[1]));
-    } else {
-	return _rl_unbind_command_in_map($_[0]);
-    }
-}
-
-sub rl_generic_bind ($$$;$) {
-    if      ($_[0] == Term::ReadLine::Gnu::ISFUNC) {
-	if (defined $_[3]) {
-	    _rl_generic_bind_function($_[1], _str2fn($_[2]), _str2map($_[3]));
-	} else {
-	    _rl_generic_bind_function($_[1], _str2fn($_[2]));
-	}
-    } elsif ($_[0] == Term::ReadLine::Gnu::ISKMAP) {
-	if (defined $_[3]) {
-	    _rl_generic_bind_keymap($_[1], _str2map($_[2]), _str2map($_[3]));
-	} else {
-	    _rl_generic_bind_keymap($_[1], _str2map($_[2]));
-	}
-    } elsif ($_[0] == Term::ReadLine::Gnu::ISMACR) {
-	if (defined $_[3]) {
-	    _rl_generic_bind_macro($_[1], $_[2], _str2map($_[3]));
-	} else {
-	    _rl_generic_bind_macro($_[1], $_[2]);
-	}
-    } else {
-	carp("Term::ReadLine::Gnu::rl_generic_bind: invalid \`type\'\n");
-    }
-}
-	    
-sub rl_call_function ($;$$) {
-    if (defined $_[2]) {
-	return _rl_call_function(_str2fn($_[0]), $_[1], $_[2]);
-    } elsif (defined $_[1]) {
-	return _rl_call_function(_str2fn($_[0]), $_[1]);
-    } else {
-	return _rl_call_function(_str2fn($_[0]));
-    }
-}
-
-sub rl_invoking_keyseqs ($;$) {
-    if (defined $_[1]) {
-	return _rl_invoking_keyseqs(_str2fn($_[0]), _str2map($_[1]));
-    } else {
-	return _rl_invoking_keyseqs(_str2fn($_[0]));
-    }
-}
-
-sub rl_message {
-    my $fmt = shift;
-    my $line = sprintf($fmt, @_);
-    _rl_message($line);
-}
-
-#
-#	List Completion Function
-#
-
-{
-    my $i;
-
-    sub list_completion_function ( $$ ) {
-	my($text, $state) = @_;
-
-	$i = $state ? $i + 1 : 0; # clear counter at the first call
-	my $cw = $Term::ReadLine::Gnu::Attribs{completion_word};
-	for (; $i <= $#{$cw}; $i++) {
-	    return $cw->[$i] if ($cw->[$i] =~ /^$text/);
-	}
-	return undef;
-    }
-}
-
-#
-#	a sample custom function
-#
-#	defined in this module for the compatibility with bash and
-#	Term::ReadLine::Perl
-#
-sub operate_and_get_next {
-    my ($count, $key) = @_;
-
-    if (defined $Next_Operate_Index) {
-	history_set_pos($Next_Operate_Index
-			- $Term::ReadLine::Gnu::Attribs{history_base});
-	undef $Next_Operate_Index;
-    }
-    rl_call_function("accept-line", $count, $key);
-
-    $Operate_Index
-	= $Term::ReadLine::Gnu::Attribs{history_base} + where_history();
-}
-
-rl_add_defun('operate-and-get-next', \&operate_and_get_next, ord "\co");
-
-#
-#	for compatibility with Term::ReadLine::Perl
-#
-sub filename_list {
-    shift;
-    my ($text) = @_;
-    return completion_matches($text, \&filename_completion_function);
-}
-
-#
-#	History Library function wrappers
-#
-sub history_list () {
-    my ($i, $history_base, $history_length, @d);
-    $history_base   = $Term::ReadLine::Gnu::Attribs{history_base};
-    $history_length = $Term::ReadLine::Gnu::Attribs{history_length};
-    for ($i = $history_base; $i < $history_base + $history_length; $i++) {
-	push(@d, history_get($i));
-    }
-    @d;
-}
-
-sub history_arg_extract ( ;$$$ ) {
-    my ($line, $first, $last) = @_;
-    $line  = $_      unless defined $line;
-    $first = 0       unless defined $first;
-    $last  = ord '$' unless defined $last; # '
-    $first = ord '$' if defined $first and $first eq '$'; # '
-    $last  = ord '$' if defined $last  and $last  eq '$'; # '
-    &_history_arg_extract($line, $first, $last);
-}
-
-use vars qw(*read_history);
-*read_history = \&read_history_range;
-
-sub get_history_event ( $$;$ ) {
-    _get_history_event($_[0], $_[1], defined $_[2] ? ord $_[2] : 0);
 }
 
 #
@@ -660,6 +461,9 @@ use vars qw(%_rl_vars);
        history_subst_char			=> ['C', 15],
        history_comment_char			=> ['C', 16],
        history_quotes_inhibit_expansion		=> ['I', 17],
+       rl_erase_empty_line			=> ['I', 18], # added GRL 4.0
+       rl_catch_signals				=> ['I', 19], # added GRL 4.0
+       rl_catch_sigwinch			=> ['I', 20], # added GRL 4.0
 
        rl_startup_hook				=> ['F', 0],
        rl_event_hook				=> ['F', 1],
@@ -667,6 +471,14 @@ use vars qw(%_rl_vars);
        rl_redisplay_function			=> ['F', 3],
        rl_completion_entry_function		=> ['F', 4],
        rl_attempted_completion_function		=> ['F', 5],
+       rl_filename_quoting_function		=> ['F', 6],
+       rl_filename_dequoting_function		=> ['F', 7],
+       rl_char_is_quoted_p			=> ['F', 8],
+       rl_ignore_some_completions_function	=> ['F', 9],
+       rl_directory_completion_hook		=> ['F', 10],
+       history_inhibit_expansion_function	=> ['F', 11],
+       rl_pre_input_hook			=> ['F', 12], # added GRL 4.0
+       rl_completion_display_matches_hook	=> ['F', 13], # added GRL 4.0
 
        rl_instream				=> ['IO', 0],
        rl_outstream				=> ['IO', 1],
@@ -763,35 +575,37 @@ foreach (keys %Term::ReadLine::Gnu::Var::_rl_vars) {
 #	add reference to some functions
 {
     my ($name, $fname);
-    no strict 'refs';
+    no strict 'refs';		# allow symbolic refernce
     map {
 	($name = $_) =~ s/^rl_//; # strip leading `rl_'
 	$fname = 'Term::ReadLine::Gnu::XS::' . $_;
 	$Attribs{$name} = \&$fname; # symbolic reference
     } qw(rl_getc
+	 rl_redisplay
 	 rl_callback_read_char
+	 rl_display_match_list
 	 filename_completion_function
 	 username_completion_function
-	 list_completion_function);
+	 list_completion_function
+         _trp_completion_function);
+    # auto-split subroutine cannot be processed in the map loop above
+    use strict 'refs';
+    $Attribs{shadow_redisplay} = \&Term::ReadLine::Gnu::XS::shadow_redisplay;
+    $Attribs{Tk_getc} = \&Term::ReadLine::Gnu::XS::Tk_getc;
+    $Attribs{list_completion_function} = \&Term::ReadLine::Gnu::XS::list_completion_function;
 }
-
-#
-#	for compatibility with Term::ReadLine::Gnu
-#
-tie $Attribs{completion_function}, 'Term::ReadLine::Gnu::Var',
-    'rl_attempted_completion_function';
 
 package Term::ReadLine::Gnu::AU;
 use Carp;
-no strict;
+no strict qw(refs vars);
 
 sub AUTOLOAD {
     { $AUTOLOAD =~ s/.*:://; }	# preserve match data
     my $name;
-    if (exists $Term::ReadLine::Gnu::XS::{"$AUTOLOAD"}) {
-	$name = "Term::ReadLine::Gnu::XS::$AUTOLOAD";
-    } elsif (exists $Term::ReadLine::Gnu::XS::{"rl_$AUTOLOAD"}) {
+    if (exists $Term::ReadLine::Gnu::XS::{"rl_$AUTOLOAD"}) {
 	$name = "Term::ReadLine::Gnu::XS::rl_$AUTOLOAD";
+    } elsif (exists $Term::ReadLine::Gnu::XS::{"$AUTOLOAD"}) {
+	$name = "Term::ReadLine::Gnu::XS::$AUTOLOAD";
     } else {
 	croak "Cannot do `$AUTOLOAD' in Term::ReadLine::Gnu";
     }
@@ -891,15 +705,15 @@ in C<MAP>.  Returns non-zero in case of error.
 
 Bind C<KEY> to the null function.  Returns non-zero in case of error.
 
-=item C<unbind_function_in_map(FUNCTION [,MAP])>
+=item C<unbind_function(FUNCTION [,MAP])>
 
-	int	rl_unbind_function_in_map(FunctionPtr|str function,
-					  Keymap|str map = rl_get_keymap())
+	int	rl_unbind_function(FunctionPtr|str function,
+				   Keymap|str map = rl_get_keymap())
 
-=item C<unbind_command_in_map(COMMAND [,MAP])>
+=item C<unbind_command(COMMAND [,MAP])>
 
-	int	rl_unbind_command_in_map(str command,
-					 Keymap|str map = rl_get_keymap())
+	int	rl_unbind_command(str command,
+				  Keymap|str map = rl_get_keymap())
 
 =item C<generic_bind(TYPE, KEYSEQ, DATA, [,MAP])>
 
@@ -1016,6 +830,14 @@ detail see 'GNU Readline Library Manual'.
 
 	int	rl_clear_message()
 
+=item C<save_prompt>
+
+	void	rl_save_prompt()
+
+=item C<restore_prompt>
+
+	void	rl_restore_prompt()
+
 =back
 
 =item Modifying Text
@@ -1068,6 +890,16 @@ detail see 'GNU Readline Library Manual'.
 
 	int	ding()
 
+=item C<display_match_list(MATCHES [,LEN [,MAX]])>
+
+	void	rl_display_match_list(\@matches, len = $#maches, max) # GRL 4.0
+
+Since the first element of an array @matches as treated as a possible
+completion, it is not displayed.  See the descriptions of
+C<completion_matches()>.
+
+When C<MAX> is ommited, the max length of an item in @matches is used.
+
 =back
 
 =item Alternate Interface
@@ -1087,6 +919,36 @@ detail see 'GNU Readline Library Manual'.
 	void	rl_callback_handler_remove()
 
 =back
+
+=back
+
+=head2 Readline Signal Handling
+
+=over 4
+
+=item C<cleanup_after_signal>
+
+	void	rl_cleanup_after_signal()	# GRL 4.0
+
+=item C<free_line_state>
+
+	void	rl_free_line_state()	# GRL 4.0
+
+=item C<reset_after_signal>
+
+	void	rl_reset_after_signal()	# GRL 4.0
+
+=item C<resize_terminal>
+
+	void	rl_resize_terminal()	# GRL 4.0
+
+=item C<set_signals>
+
+	int	rl_set_signals()	# GRL 4.0
+
+=item C<clear_signals>
+
+	int	rl_clear_signals()	# GRL 4.0
 
 =back
 
@@ -1111,7 +973,7 @@ detail see 'GNU Readline Library Manual'.
 
 	str	username_completion_function(str text, int state)
 
-=item C<listname_completion_function(TEXT, STATE)>
+=item C<list_completion_function(TEXT, STATE)>
 
 	str	list_completion_function(str text, int state)
 
@@ -1288,6 +1150,8 @@ F<~/.history>.  Returns true if successful, or false if not.
 
 	(int result, str expansion) history_expand(str line)
 
+Note that this function returns C<expansion> in scalar context.
+
 =item C<history_arg_extract(LINE, [FIRST [,LAST]])>
 
 	str history_arg_extract(str line, int first = 0, int last = '$')
@@ -1334,6 +1198,7 @@ Examples:
 	int rl_mark
 	int rl_done		
 	int rl_pending_input
+	int rl_erase_empty_line (GRL 4.0)
 	str rl_prompt (read only)
 	str rl_library_version (read only)
 	str rl_terminal_name
@@ -1341,19 +1206,25 @@ Examples:
 	filehandle rl_instream
 	filehandle rl_outstream
 	pfunc rl_startup_hook
+	pfunc rl_pre_input_hook (GRL 4.0)
 	pfunc rl_event_hook
 	pfunc rl_getc_function
 	pfunc rl_redisplay_function
 	Keymap rl_executing_keymap (read only)
 	Keymap rl_binding_keymap (read only)
 
+=item Signal Handling Variables
+
+	int rl_catch_signals (GRL 4.0)
+	int rl_catch_sigwinch (GRL 4.0)
+
 =item Completion Variables
 
 	pfunc rl_completion_entry_function
 	pfunc rl_attempted_completion_function
-	rl_filename_quoting_function (not implemented)
-	rl_filename_dequoting_function (not implemented)
-	rl_char_is_quoted_p (not implemented)
+	pfunc rl_filename_quoting_function
+	pfunc rl_filename_dequoting_function
+	pfunc rl_char_is_quoted_p
 	int rl_completion_query_items
 	str rl_basic_word_break_characters
 	str rl_basic_quote_characters
@@ -1366,8 +1237,9 @@ Examples:
 	int rl_filename_completion_desired
 	int rl_filename_quoting_desired
 	int rl_inhibit_completion
-	rl_ignore_some_completion_function (not implemented)
-	rl_directory_completion_hook (not implemented)
+	pfunc rl_ignore_some_completion_function
+	pfunc rl_directory_completion_hook
+	pfunc rl_completion_display_matches_hook (GRL 4.0)
 
 =item History Variables
 
@@ -1380,19 +1252,19 @@ Examples:
 	str history_no_expand_chars
 	str history_search_delimiter_chars
 	int history_quotes_inhibit_expansion
+	pfunc history_inhibit_expansion_function
 
 =item Function References
 
 	rl_getc
+	rl_redisplay
 	rl_callback_read_char
+	rl_display_match_list
 	filename_completion_function
 	username_completion_function
 	list_completion_function
-
-=item C<Term::ReadLine::Gnu> Specific Variables
-
-	do_expand		# if true history expansion is enabled
-	completion_word		# for list_completion_function
+	shadow_redisplay
+	Tk_getc
 
 =back
 
@@ -1432,7 +1304,7 @@ in Gnu.pm.  You can use it as follows;
     my $attribs = $term->Attribs;
     ...
     $attribs->{completion_entry_function} =
-	$attribs->{'list_completion_function'};
+	$attribs->{list_completion_function};
     ...
     $attribs->{completion_word} =
 	[qw(reference to a list of words which you want to use for completion)];
@@ -1495,11 +1367,101 @@ C<completion_matches> is a Perl wrapper function of an internal
 function C<completion_matches()>.  See also
 C<$rl_completion_entry_function>.
 
+=item C<completion_function>
+
+A variable whose content is a reference to a function which returns a
+list of candidates to complete.
+
+This variable is compatible with C<Term::ReadLine::Perl> and very easy
+to use.
+
+    use Term::ReadLine;
+    ...
+    my $term = new Term::ReadLine 'sample';
+    my $attribs = $term->Attribs;
+    ...
+    $attribs->{completion_function} = sub {
+	my ($text, $line, $start) = @_;
+	return qw(a list of candidates to complete);
+    }
+
 =item C<list_completion_function(TEXT, STATE)>
 
-A sample generator function defined by Term::ReadLine::Gnu.pm.
+A sample generator function defined by C<Term::ReadLine::Gnu>.
 Example code at C<rl_completion_entry_function> shows how to use this
 function.
+
+=back
+
+=head1 C<Term::ReadLine::Gnu> Specific Features
+
+=head2 Functions
+
+=over 4
+
+=item C<rl_get_all_function_names>
+
+Returns a list of all function names.
+
+=item C<shadow_redisplay>
+
+A redisplay function for password input.  You can use it as follows;
+
+	$attribs->{redisplay_function} = $attribs->{shadow_redisplay};
+	$line = $term->readline("password> ");
+
+=item C<rl_filename_list>
+
+Returns candidates of filename to complete.  This function can be used
+with C<completion_function> and is implemented for the compatibility
+with C<Term::ReadLine::Perl>.
+
+=item C<list_completion_function>
+
+See the description of section L<"Custom Completion"|"Custom Completion">.
+
+=back
+
+=head2 Variables
+
+=over 4
+
+=item C<do_expand>
+
+When true, the history expansion is enabled.  By default false.
+
+=item C<completion_function>
+
+See the description of section L<"Custom Completion"|"Custom Completion">.
+
+=item C<completion_word>
+
+A reference to a list of candidates to complete for
+C<list_completion_function>.
+
+=back
+
+=head2 Commands
+
+=over 4
+
+=item C<operate-and-get-next>
+
+The equivalent of the Korn shell C<C-o>
+C<operate-and-get-next-history-line> editing command and the Bash
+C<operate-and-get-next>.
+
+This command is bound to C<\C-o> by default for the compatibility with
+the Bash and C<Term::ReadLine::Perl>.
+
+=item C<display-readline-version>
+
+Shows the version of C<Term::ReadLine::Gnu> and the one of the GNU
+Readline Library.
+
+=item C<change-ornaments>
+
+Change ornaments interactively.
 
 =back
 
@@ -1546,37 +1508,28 @@ GNU Readline Library Manual
 
 GNU History Library Manual
 
-Term::ReadLine
+C<Term::ReadLine>
 
-Term::ReadLine::Perl (Term-ReadLine-Perl-xx.tar.gz)
+C<Term::ReadLine::Perl> (Term-ReadLine-Perl-xx.tar.gz)
 
 =head1 AUTHOR
 
-Hiroo Hayashi <hiroo.hayashi@computer.org>
+Hiroo Hayashi C<E<lt>hiroo.hayashi@computer.orgE<gt>>
 
-http://www.perl.org/CPAN/authors/Hiroo_HAYASHI/
+C<http://www.perl.org/CPAN/authors/Hiroo_HAYASHI/>
 
 =head1 TODO
 
-Test routines for following variable and functions are required.
-
-	rl_read_key()
-	rl_stuff_char()
-
-	rl_callback_handler_install()
-	rl_callback_read_char()
-	rl_callback_handler_remove()
-
-	rl_complete_internal()
+GTK+ support in addition to Tk.
 
 =head1 BUGS
 
-rl_add_defun() can define up to 16 functions.
+C<rl_add_defun()> can define up to 16 functions.
 
 Ornament feature works only on prompt strings.  It requires very hard
-hacking of display.c:rl_redisplay() in GNU Readline library to
+hacking of C<display.c:rl_redisplay()> in GNU Readline library to
 ornament input line.
 
-newTTY() is not tested yet.
+C<newTTY()> is not tested yet.
 
 =cut
