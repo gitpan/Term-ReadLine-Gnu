@@ -50,7 +50,7 @@
 		o result of `perl -V'
 		o compiler you used to compile the GNU Readline Library
 		  (libreadline.a).
-		o terminal emulater which you are using
+		o terminal emulator which you are using
 		o result of `echo $TERM`
 
 2. How to Install GNU Readline Library
