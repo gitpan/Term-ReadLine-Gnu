@@ -1,7 +1,7 @@
 #
 #	Makefile.PL for Term::ReadLine::Gnu
 #
-#	$Id: Makefile.PL,v 1.9 1998-05-09 02:37:26+09 hayashi Exp $
+#	$Id: Makefile.PL,v 1.12 1998-09-29 01:02:07+09 hayashi Exp $
 #
 #	Copyright (c) 1996,1997,1998 Hiroo Hayashi.  All rights reserved.
 #		<hiroo.hayashi@computer.org>
@@ -14,8 +14,8 @@
 
 ########################################################################
 # Modify these variables if you need.
-$libreadlinedir = '/usr/local/gnu/lib';	# for -L option
-$increadlinedir = '/usr/local/gnu/inc';	# for -I option
+$libreadlinedir = '/usr/local/gnu/lib';		# for -L option
+$increadlinedir = '/usr/local/gnu/include';	# for -I option
 
 ########################################################################
 use ExtUtils::MakeMaker;
@@ -23,12 +23,23 @@ use Config;
 
 $defs = ($Config{strings} =~ m|/string.h$|) ? '-DHAVE_STRING_H' : '';
 
+# Search libtermcap, libncurses, or libcurses in this order.
+# I emulate the behavior of configure script for bash, and don't know
+# why AIX prefers curses.
+$PREFER_CURSES = $Config{osname} eq 'aix';
+$TERMCAP_LIB = (! $PREFER_CURSES && &search_lib('-ltermcap'))
+    || &search_lib('-lncurses')
+    || &search_lib('-lcurses');
+
+die "Cannot find neither libtermcap.a, libncureses.a, or libcurses.\n"
+    unless $TERMCAP_LIB;
+
 # Ignore outside of OS/2. Set to 1 if linking with readline.dll under
 # OS/2.
 # Check ftp://ftp.math.ohio-state.edu/pub/users/ilya/os2/
 $os2_usedll = $Config{osname} eq 'os2';
 if ($os2_usedll == 0) {
-    $libs = '-lreadline -ltermcap';
+    $libs = "-lreadline $TERMCAP_LIB";
 } else {
     $libs = '-lreadline_import';
     $defs .= ' -DOS2_USEDLL';
@@ -50,7 +61,7 @@ EOF
 close(F);
 
 # compile it
-system("$Config{cc} -I$increadlinedir $Config{ccflags} $defs $frlver -o rlver -L$libreadlinedir -lreadline -ltermcap $Config{ldflags}");
+system("$Config{cc} -I$increadlinedir $Config{ccflags} $defs $frlver -o rlver -L$libreadlinedir -lreadline $TERMCAP_LIB $Config{ldflags}");
 if ($?) {
     die <<EOM;
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -79,9 +90,34 @@ WriteMakefile(
 	(
 	IMPORTS	=> { xfree => 'emxlibcm.401' },	# Yuck!
 	) : () ),
-    'INC'	=> '-I$increadlinedir',
+    'INC'	=> "-I$increadlinedir",
     'dist'	=> { COMPRESS => 'gzip -9f', SUFFIX => 'gz' },
     'clean'	=> { FILES => 'rlver.c rlver' },
 );
+
+exit(0);
+
+########################################################################
+# Search a library '$lib' in $Config{libpth} directories, and return
+# $lib if exist or undef unless exist.
+#
+# ExtUtils::MakeMaker::ext() do same job as this subroutine, but it
+# warns unnecessary messages.
+sub search_lib {
+    my ($lib) = @_;
+    unless ($lib =~ /^-l/) {
+	warn "search_lib: illegal arguments, \`$lib\'.\n";
+	return undef;
+    }
+    my $libbase = 'lib' . substr($lib, 2) . $Config{lib_ext};
+    foreach (split(' ', $Config{libpth})) {
+#	print $_ . '/' . $libbase, "\n";
+	if (-f $_ . '/' . $libbase) {
+	    print "Find \`$_/$libbase\'.\n";
+	    return $lib;
+	}
+    }
+    return undef;
+}    
 
 # End of Makefile.PL

@@ -1,6 +1,6 @@
 #! /usr/local/bin/perl
 #
-#	$Id: perlsh,v 1.10 1997-04-14 23:27:30+09 hayashi Exp $	
+#	$Id: perlsh,v 1.12 1998-09-28 00:40:52+09 hayashi Exp $	
 #
 #	Copyright (c) 1996,1997 Hiroo Hayashi. All Rights Reserved.
 #
@@ -61,6 +61,9 @@ my $attribs = $term->Attribs;
 &toplevel;			# never returns
 
 sub toplevel {
+    # disable implicit add_history() call
+    $term->MinLine(undef);
+
     $term->stifle_history($HISTSIZE);
     if (-f $HISTFILE) {
 	$term->ReadHistory($HISTFILE)
@@ -97,9 +100,11 @@ sub reader {
 	return undef unless (defined $line);
 	
 	if ($line =~ /\\$/) {
-	    chop $line; $command .= " $line";
+	    chop $line;
+	    $command = $command ? $command . " $line" : $line;
 	} else {
-	    $command .= " $line";
+	    $command = $command ? $command . " $line" : $line;
+	    $term->addhistory($command);
 	    return $command;
 	}
     }
@@ -268,7 +273,7 @@ GNU Readline Library Texinfo Manual
 
 =head1 AUTHOR
 
-Hiroo Hayashi <hiroo.hayashi@toshiba.co.jp>
+Hiroo Hayashi <hiroo.hayashi@computer.org>
 
 =head1 BUGS
 

@@ -1,7 +1,7 @@
 /*
  *	Gnu.xs --- GNU Readline wrapper module
  *
- *	$Id: Gnu.xs,v 1.59 1998-05-05 22:57:25+09 hayashi Exp $
+ *	$Id: Gnu.xs,v 1.61 1998-09-29 00:40:18+09 hayashi Exp $
  *
  *	Copyright (c) 1996,1997 Hiroo Hayashi.  All rights reserved.
  *
@@ -32,9 +32,11 @@ extern int rl_ignore_completion_duplicates;
 /* from GNU Readline:xmalloc.c */
 extern char *xmalloc (int);
 void rl_extend_line_buffer (int);
+extern char *tgetstr(const char *, char **);
 #else
 extern char *xmalloc ();
 void rl_extend_line_buffer ();
+extern char *tgetstr();
 #endif /* __STDC__ */
 
 /*
@@ -1649,5 +1651,26 @@ _rl_fetch_function(id)
 	    /* return undef */
 	  } else if (fn_tbl[id].callback && SvTRUE(fn_tbl[id].callback)) {
 	    sv_setsv(ST(0), fn_tbl[id].callback);
+	  }
+	}
+
+MODULE = Term::ReadLine::Gnu		PACKAGE = Term::ReadLine::Gnu::TermCap
+
+void
+_tgetstr(id)
+	const char *id
+	PROTOTYPE: $
+	CODE:
+	{
+	  /*
+	   * The magic number `2032' is derived from bash
+	   * terminal.c:_rl_init_terminal_io().
+	   */
+	  char buffer[2032];
+	  char *bp = buffer;
+
+	  ST(0) = sv_newmortal();
+	  if (id) {
+	    sv_setpv(ST(0), tgetstr(id, &bp));
 	  }
 	}
