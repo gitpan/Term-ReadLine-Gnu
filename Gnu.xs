@@ -1,9 +1,9 @@
 /*
  *	Gnu.xs --- GNU Readline wrapper module
  *
- *	$Id: Gnu.xs,v 1.104 2003-03-16 20:25:27-05 hiroo Exp $
+ *	$Id: Gnu.xs,v 1.108 2004-10-17 12:37:53-05 hiroo Exp $
  *
- *	Copyright (c) 2002 Hiroo Hayashi.  All rights reserved.
+ *	Copyright (c) 2004 Hiroo Hayashi.  All rights reserved.
  *
  *	This program is free software; you can redistribute it and/or
  *	modify it under the same terms as Perl itself.
@@ -12,6 +12,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+#define PERLIO_NOT_STDIO 0
 #include "EXTERN.h"
 #include "perl.h"
 #include "XSUB.h"
@@ -167,9 +168,18 @@ static int rl_readline_version = RL_READLINE_VERSION;
 extern char *rl_get_termcap PARAMS((const char *));
 
 /* features introduced by GNU Readline 4.3 */
-static int rl_completion_suppress_append;
-static int rl_completion_mark_symlink_dirs;
+static int rl_completion_suppress_append = 0;
+static int rl_completion_mark_symlink_dirs = 0;
 #endif /* (RL_READLINE_VERSION < 0x0403) */
+
+#if (RL_VERSION_MAJOR < 5)
+/* features introduced by GNU Readline 5.0 */
+static int history_write_timestamps = 0;
+static int rl_completion_quote_character = 0;
+static int rl_completion_suppress_quote = 0;
+static int rl_completion_found_quote = 0;
+static Function *rl_completion_word_break_hook = NULL;
+#endif /* (RL_VERSION_MAJOR < 5) */
 
 /*
  * utility/dummy functions
@@ -328,27 +338,37 @@ static struct int_vars {
 #else /* (RL_READLINE_VERSION < 0x0402) */
   { &max_input_history,				0, 1 },	/* 13 */
 #endif /* (RL_READLINE_VERSION < 0x0402) */
-  { (int *)&history_expansion_char,		1, 0 },	/* 14 */
-  { (int *)&history_subst_char,			1, 0 },	/* 15 */
-  { (int *)&history_comment_char,		1, 0 },	/* 16 */
-  { &history_quotes_inhibit_expansion,		0, 0 },	/* 17 */
-  { &rl_erase_empty_line,			0, 0 },	/* 18 */
-  { &rl_catch_signals,				0, 0 },	/* 19 */
-  { &rl_catch_sigwinch,				0, 0 },	/* 20 */
-  { &rl_already_prompted,			0, 0 },	/* 21 */
-  { &rl_num_chars_to_read,			0, 0 },	/* 22 */
-  { &rl_dispatching,				0, 0 },	/* 23 */
-  { &rl_gnu_readline_p,				0, 1 },	/* 24 */
-  { &rl_readline_state,				0, 0 },	/* 25 */
-  { &rl_explicit_arg,				0, 0 },	/* 26 */
-  { &rl_numeric_arg,				0, 0 },	/* 27 */
-  { &rl_editing_mode,				0, 0 },	/* 28 */
-  { &rl_attempted_completion_over,		0, 0 },	/* 29 */
-  { &rl_completion_type,			0, 0 },	/* 30 */
-  { &rl_readline_version,			0, 1 },	/* 31 */
-  { &rl_completion_suppress_append,		0, 0 },	/* 32 */
-  { &rl_completion_mark_symlink_dirs,		0, 0 }	/* 33 */
+  { &history_write_timestamps,			0, 0 },	/* 14 */
+  { (int *)&history_expansion_char,		1, 0 },	/* 15 */
+  { (int *)&history_subst_char,			1, 0 },	/* 16 */
+  { (int *)&history_comment_char,		1, 0 },	/* 17 */
+  { &history_quotes_inhibit_expansion,		0, 0 },	/* 18 */
+  { &rl_erase_empty_line,			0, 0 },	/* 19 */
+  { &rl_catch_signals,				0, 0 },	/* 20 */
+  { &rl_catch_sigwinch,				0, 0 },	/* 21 */
+  { &rl_already_prompted,			0, 0 },	/* 22 */
+  { &rl_num_chars_to_read,			0, 0 },	/* 23 */
+  { &rl_dispatching,				0, 0 },	/* 24 */
+  { &rl_gnu_readline_p,				0, 1 },	/* 25 */
+  { &rl_readline_state,				0, 0 },	/* 26 */
+  { &rl_explicit_arg,				0, 0 },	/* 27 */
+  { &rl_numeric_arg,				0, 0 },	/* 28 */
+  { &rl_editing_mode,				0, 0 },	/* 29 */
+  { &rl_attempted_completion_over,		0, 0 },	/* 30 */
+  { &rl_completion_type,			0, 0 },	/* 31 */
+  { &rl_readline_version,			0, 1 },	/* 32 */
+  { &rl_completion_suppress_append,		0, 0 },	/* 33 */
+  { &rl_completion_quote_character,		0, 0 },	/* 34 */
+  { &rl_completion_suppress_quote,		0, 0 },	/* 35 */
+  { &rl_completion_found_quote,			0, 0 },	/* 36 */
+  { &rl_completion_mark_symlink_dirs,		0, 0 }	/* 37 */
 };
+
+/*
+ *	PerlIO variables for _rl_store_iostream(), _rl_fetch_iostream()
+ */
+static PerlIO *instreamPIO = NULL;
+static PerlIO *outstreamPIO = NULL;
 
 /*
  *	function pointer variable table for _rl_store_function(),
@@ -357,7 +377,7 @@ static struct int_vars {
 
 static int startup_hook_wrapper PARAMS((void));
 static int event_hook_wrapper PARAMS((void));
-static int getc_function_wrapper PARAMS((FILE *));
+static int getc_function_wrapper PARAMS((PerlIO *));
 static void redisplay_function_wrapper PARAMS((void));
 static char *completion_entry_function_wrapper PARAMS((const char *, int));;
 static char **attempted_completion_function_wrapper PARAMS((char *, int, int));
@@ -372,6 +392,7 @@ static int history_inhibit_expansion_function_wrapper PARAMS((char *str, int i))
 static int pre_input_hook_wrapper PARAMS((void));
 static void completion_display_matches_hook_wrapper PARAMS((char **matches,
 							 int len, int max));
+static char *completion_word_break_hook_wrapper PARAMS((void));
 static int prep_term_function_wrapper PARAMS((int meta_flag));
 static int deprep_term_function_wrapper PARAMS((void));
 static int directory_rewrite_hook_wrapper PARAMS((char **));
@@ -380,7 +401,8 @@ enum { STARTUP_HOOK, EVENT_HOOK, GETC_FN, REDISPLAY_FN,
        CMP_ENT, ATMPT_COMP,
        FN_QUOTE, FN_DEQUOTE, CHAR_IS_QUOTEDP,
        IGNORE_COMP, DIR_COMP, HIST_INHIBIT_EXP,
-       PRE_INPUT_HOOK, COMP_DISP_HOOK, PREP_TERM, DEPREP_TERM, DIR_REWRITE
+       PRE_INPUT_HOOK, COMP_DISP_HOOK, COMP_WD_BRK_HOOK,
+       PREP_TERM, DEPREP_TERM, DIR_REWRITE
 };
 
 static struct fn_vars {
@@ -454,19 +476,25 @@ static struct fn_vars {
     NULL
   },
   {
-    (Function **)&rl_prep_term_function,			/* 14 */
+    (Function **)&rl_completion_word_break_hook,		/* 14 */
+    NULL,
+    (Function *)completion_word_break_hook_wrapper,
+    NULL
+  },
+  {
+    (Function **)&rl_prep_term_function,			/* 15 */
     (Function *)rl_prep_terminal,
     (Function *)prep_term_function_wrapper,
     NULL
   },
   {
-    (Function **)&rl_deprep_term_function,			/* 15 */
+    (Function **)&rl_deprep_term_function,			/* 16 */
     (Function *)rl_deprep_terminal,
     (Function *)deprep_term_function_wrapper,
     NULL
   },
   {
-    (Function **)&rl_directory_rewrite_hook,			/* 16 */
+    (Function **)&rl_directory_rewrite_hook,			/* 17 */
     NULL,
     (Function *)directory_rewrite_hook_wrapper,
     NULL
@@ -477,6 +505,9 @@ static struct fn_vars {
  * Perl function wrappers
  */
 
+/*
+ * for rl_voidfunc_t : void fn(void)
+ */
 static int
 voidfunc_wrapper(type)
      int type;
@@ -504,6 +535,9 @@ voidfunc_wrapper(type)
   return ret;
 }
 
+/*
+ * for rl_vintfunc_t : void fn(int)
+ */
 static int
 vintfunc_wrapper(type, arg)
      int type;
@@ -534,6 +568,9 @@ vintfunc_wrapper(type, arg)
   return ret;
 }
 
+/*
+ * for rl_icppfunc_t : int fn(char **)
+ */
 static int
 icppfunc_wrapper(type, arg)
      int type;
@@ -580,6 +617,114 @@ icppfunc_wrapper(type, arg)
   return ret;
 }
 
+#if 0
+/*
+ * for rl_icpfunc_t : int fn(char *)
+ */
+static int
+icpfunc_wrapper(type, text)
+     int type;
+     char *text;
+{
+  dSP;
+  int count;
+  int ret;
+  
+  ENTER;
+  SAVETMPS;
+
+  PUSHMARK(sp);
+  if (text) {
+    XPUSHs(sv_2mortal(newSVpv(text, 0)));
+  } else {
+    XPUSHs(&PL_sv_undef);
+  }
+  PUTBACK;
+
+  count = perl_call_sv(fn_tbl[type].callback, G_SCALAR);
+
+  SPAGAIN;
+
+  if (count != 1)
+    croak("Gnu.xs:icpfunc_wrapper: Internal error\n");
+
+  ret = POPi;			/* warns unless integer */
+  PUTBACK;
+  FREETMPS;
+  LEAVE;
+  return ret;
+}
+#endif
+
+/*
+ * for rl_cpvfunc_t : (char *)fn(void)
+ */
+static char *
+cpvfunc_wrapper(type)
+     int type;
+{
+  dSP;
+  int count;
+  char *str;
+  SV *svret;
+  
+  ENTER;
+  SAVETMPS;
+
+  PUSHMARK(sp);
+  count = perl_call_sv(fn_tbl[type].callback, G_SCALAR);
+  SPAGAIN;
+
+  if (count != 1)
+    croak("Gnu.xs:cpvfunc_wrapper: Internal error\n");
+
+  svret = POPs;
+  str = SvOK(svret) ? dupstr(SvPV(svret, PL_na)) : NULL;
+  PUTBACK;
+  FREETMPS;
+  LEAVE;
+  return str;
+}
+
+/*
+ * for rl_linebuf_func_t : int fn(char *, int)
+ */
+static int
+icpintfunc_wrapper(type, text, index)
+     int type;
+     char *text;
+     int index;
+{
+  dSP;
+  int count;
+  int ret;
+  
+  ENTER;
+  SAVETMPS;
+
+  PUSHMARK(sp);
+  if (text) {
+    XPUSHs(sv_2mortal(newSVpv(text, 0)));
+  } else {
+    XPUSHs(&PL_sv_undef);
+  }
+  XPUSHs(sv_2mortal(newSViv(index)));
+  PUTBACK;
+
+  count = perl_call_sv(fn_tbl[type].callback, G_SCALAR);
+
+  SPAGAIN;
+
+  if (count != 1)
+    croak("Gnu.xs:icpintfunc_wrapper: Internal error\n");
+
+  ret = POPi;			/* warns unless integer */
+  PUTBACK;
+  FREETMPS;
+  LEAVE;
+  return ret;
+}
+
 static int
 startup_hook_wrapper()		{ return voidfunc_wrapper(STARTUP_HOOK); }
 static int
@@ -587,11 +732,11 @@ event_hook_wrapper()		{ return voidfunc_wrapper(EVENT_HOOK); }
 
 static int
 getc_function_wrapper(fp)
-     FILE *fp;
+     PerlIO *fp;
 {
   /*
-   * 'FILE *fp' is ignored.  Use rl_instream instead in the getc_function.
-   * How can I pass 'FILE *fp'?
+   * 'PerlIO *fp' is ignored.  Use rl_instream instead in the getc_function.
+   * How can I pass 'PerlIO *fp'?
    */
   return voidfunc_wrapper(GETC_FN);
 }
@@ -601,6 +746,7 @@ redisplay_function_wrapper()	{ voidfunc_wrapper(REDISPLAY_FN); }
 
 /*
  * call a perl function as rl_completion_entry_function
+ * for rl_compentry_func_t : (char *)fn(const char *, int)
  */
 
 static char *
@@ -643,6 +789,7 @@ completion_entry_function_wrapper(text, state)
 
 /*
  * call a perl function as rl_attempted_completion_function
+ * for rl_completion_func_t : (char **)fn(const char *, int, int)
  */
 
 static char **
@@ -728,6 +875,7 @@ attempted_completion_function_wrapper(text, start, end)
 
 /*
  * call a perl function as rl_filename_quoting_function
+ * for rl_quote_func_t : (char *)fn(char *, int, char *)
  */
 
 static char *
@@ -776,6 +924,7 @@ filename_quoting_function_wrapper(text, match_type, quote_pointer)
 
 /*
  * call a perl function as rl_filename_dequoting_function
+ * for rl_dequote_func_t : (char *)fn(char *, int)
  */
 
 static char *
@@ -825,38 +974,12 @@ char_is_quoted_p_wrapper(text, index)
      char *text;
      int index;
 {
-  dSP;
-  int count;
-  int ret;
-  
-  ENTER;
-  SAVETMPS;
-
-  PUSHMARK(sp);
-  if (text) {
-    XPUSHs(sv_2mortal(newSVpv(text, 0)));
-  } else {
-    XPUSHs(&PL_sv_undef);
-  }
-  XPUSHs(sv_2mortal(newSViv(index)));
-  PUTBACK;
-
-  count = perl_call_sv(fn_tbl[CHAR_IS_QUOTEDP].callback, G_SCALAR);
-
-  SPAGAIN;
-
-  if (count != 1)
-    croak("Gnu.xs:char_is_quoted_p_wrapper: Internal error\n");
-
-  ret = POPi;			/* warns unless integer */
-  PUTBACK;
-  FREETMPS;
-  LEAVE;
-  return ret;
+  return icpintfunc_wrapper(CHAR_IS_QUOTEDP, text, index);
 }
 
 /*
  * call a perl function as rl_ignore_some_completions_function
+ * for rl_compignore_func_t : int fn(char **)
  */
 
 static void
@@ -962,34 +1085,7 @@ history_inhibit_expansion_function_wrapper(text, index)
      char *text;
      int index;
 {
-  dSP;
-  int count;
-  int ret;
-  
-  ENTER;
-  SAVETMPS;
-
-  PUSHMARK(sp);
-  if (text) {
-    XPUSHs(sv_2mortal(newSVpv(text, 0)));
-  } else {
-    XPUSHs(&PL_sv_undef);
-  }
-  XPUSHs(sv_2mortal(newSViv(index)));
-  PUTBACK;
-
-  count = perl_call_sv(fn_tbl[HIST_INHIBIT_EXP].callback, G_SCALAR);
-
-  SPAGAIN;
-
-  if (count != 1)
-    croak("Gnu.xs:history_inhibit_expansion_function_wrapper: Internal error\n");
-
-  ret = POPi;			/* warns unless integer */
-  PUTBACK;
-  FREETMPS;
-  LEAVE;
-  return ret;
+  return icpintfunc_wrapper(HIST_INHIBIT_EXP, text, index);
 }
 
 static int
@@ -998,6 +1094,7 @@ pre_input_hook_wrapper() { return voidfunc_wrapper(PRE_INPUT_HOOK); }
 #if (RL_VERSION_MAJOR >= 4)
 /*
  * call a perl function as rl_completion_display_matches_hook
+ * for rl_compdisp_func_t : void fn(char **, int, int)
  */
 
 static void
@@ -1046,6 +1143,12 @@ completion_display_matches_hook_wrapper(matches, len, max)
   /* dummy */
 }
 #endif /* (RL_VERSION_MAJOR < 4) */
+
+static char *
+completion_word_break_hook_wrapper()
+{
+  return cpvfunc_wrapper(COMP_WD_BRK_HOOK);
+}
 
 static int
 prep_term_function_wrapper(meta_flag)
@@ -1282,6 +1385,20 @@ _rl_bind_key(key, function, map = rl_get_keymap())
     OUTPUT:
 	RETVAL
 
+#if (RL_VERSION_MAJOR >= 5)
+int
+_rl_bind_key_if_unbound(key, function, map = rl_get_keymap())
+	int key
+	rl_command_func_t *	function
+	Keymap map
+    PROTOTYPE: $$;$
+    CODE:
+	RETVAL = rl_bind_key_if_unbound_in_map(key, function, map);
+    OUTPUT:
+	RETVAL
+
+#endif /* (RL_VERSION_MAJOR >= 5) */
+
 int
 _rl_unbind_key(key, map = rl_get_keymap())
 	int key
@@ -1319,6 +1436,20 @@ _rl_unbind_command(command, map = rl_get_keymap())
 
 #endif /* (RL_READLINE_VERSION >= 0x0202) */
 
+#if (RL_VERSION_MAJOR >= 5)
+int
+_rl_bind_keyseq(keyseq, function, map = rl_get_keymap())
+	const char *keyseq
+	rl_command_func_t *	function
+	Keymap map
+    PROTOTYPE: $$;$
+    CODE:
+	RETVAL = rl_bind_keyseq_in_map(keyseq, function, map);
+    OUTPUT:
+	RETVAL
+
+#endif /* (RL_VERSION_MAJOR >= 5) */
+
 #if (RL_READLINE_VERSION >= 0x0402)
  # rl_set_key() is introduced by readline-4.2 and equivalent with
  # rl_generic_bind(ISFUNC, keyseq, (char *)function, map).
@@ -1334,6 +1465,20 @@ _rl_set_key(keyseq, function, map = rl_get_keymap())
 	RETVAL
 
 #endif /* (RL_READLINE_VERSION >= 0x0402) */
+
+#if (RL_VERSION_MAJOR >= 5)
+int
+_rl_bind_keyseq_if_unbound(keyseq, function, map = rl_get_keymap())
+	const char *keyseq
+	rl_command_func_t *	function
+	Keymap map
+    PROTOTYPE: $$;$
+    CODE:
+	RETVAL = rl_bind_keyseq_if_unbound_in_map(keyseq, function, map);
+    OUTPUT:
+	RETVAL
+
+#endif /* (RL_VERSION_MAJOR >= 5) */
 
 int
 _rl_generic_bind_function(keyseq, function, map = rl_get_keymap())
@@ -1743,6 +1888,16 @@ _rl_tty_set_default_bindings(kmap = rl_get_keymap())
 
 #endif /* (RL_VERSION_MAJOR >= 4) */
 
+#if (RL_VERSION_MAJOR >= 5)
+void
+_rl_tty_unset_default_bindings(kmap = rl_get_keymap())
+	Keymap kmap
+    PROTOTYPE: ;$
+    CODE:
+	rl_tty_unset_default_bindings(kmap);
+
+#endif /* (RL_VERSION_MAJOR >= 5) */
+
 int
 rl_reset_terminal(terminal_name = NULL)
 	CONST char *	terminal_name
@@ -2101,6 +2256,14 @@ add_history(string)
 	CONST char *	string
     PROTOTYPE: $
 
+#if (RL_VERSION_MAJOR >= 5)
+void
+add_history_time(string)
+	CONST char *	string
+    PROTOTYPE: $
+
+#endif /* (RL_VERSION_MAJOR >= 5) */
+
 HIST_ENTRY *
 remove_history(which)
 	int which
@@ -2110,10 +2273,18 @@ remove_history(which)
     CLEANUP:
 	if (RETVAL) {
 	  xfree(RETVAL->line);
+#if (RL_VERSION_MAJOR >= 5)
+	  xfree(RETVAL->timestamp);
+#endif /* (RL_VERSION_MAJOR >= 5) */
 	  xfree(RETVAL->data);
 	  xfree((char *)RETVAL);
 	}
 
+ # free_history_entry() is introduced by GNU Readline Library 5.0.
+ # Since Term::ReadLine::Gnu does not support the member 'data' of HIST_ENTRY
+ # structure, remove_history() covers it.
+
+ # The 3rd parameter (histdata_t) is not supported. Does anyone use it?
 HIST_ENTRY *
 replace_history_entry(which, line)
 	int which
@@ -2126,6 +2297,9 @@ replace_history_entry(which, line)
     CLEANUP:
 	if (RETVAL) {
 	  xfree(RETVAL->line);
+#if (RL_VERSION_MAJOR >= 5)
+	  xfree(RETVAL->timestamp);
+#endif /* (RL_VERSION_MAJOR >= 5) */
 	  xfree(RETVAL->data);
 	  xfree((char *)RETVAL);
 	}
@@ -2177,6 +2351,26 @@ HIST_ENTRY *
 history_get(offset)
 	int offset
     PROTOTYPE: $
+
+#if (RL_VERSION_MAJOR >= 5)
+ # To keep compatibility, I cannot make a function whose argument
+ # is "HIST_ENTRY *".
+time_t
+history_get_time(offset)
+	int offset
+    PROTOTYPE: $
+    CODE:
+	{
+	  HIST_ENTRY *he = history_get(offset);
+	  if (he)
+	    RETVAL = history_get_time(he);
+	  else
+	    RETVAL = 0;
+	}
+    OUTPUT:
+	RETVAL
+
+#endif /* (RL_VERSION_MAJOR >= 5) */
 
 int
 history_total_bytes()
@@ -2468,19 +2662,25 @@ _rl_fetch_int(id)
 	  }
 	}
 
-FILE *
+PerlIO *
 _rl_store_iostream(stream, id)
-	FILE *	stream
+	PerlIO *stream
 	int id
     PROTOTYPE: $$
     CODE:
 	{
 	  switch (id) {
 	  case 0:
-	    RETVAL = rl_instream = stream;
+	    if (instreamPIO != NULL)
+	      PerlIO_releaseFILE(instreamPIO, rl_instream);
+	    rl_instream = PerlIO_findFILE(stream);
+	    RETVAL = instreamPIO = stream;
 	    break;
 	  case 1:
-	    RETVAL = rl_outstream = stream;
+	    if (outstreamPIO != NULL)
+	      PerlIO_releaseFILE(outstreamPIO, rl_outstream);
+	    rl_outstream = PerlIO_findFILE(stream);
+	    RETVAL = outstreamPIO = stream;
 #ifdef __CYGWIN__
 	    {
 	      /* Cygwin b20.1 library converts NL to CR-NL
@@ -2504,7 +2704,7 @@ _rl_store_iostream(stream, id)
     OUTPUT:
 	RETVAL
 
-FILE *
+PerlIO *
 _rl_fetch_iostream(id)
 	int id
     PROTOTYPE: $
@@ -2512,10 +2712,16 @@ _rl_fetch_iostream(id)
 	{
 	  switch (id) {
 	  case 0:
-	    RETVAL = rl_instream;
+	    if (instreamPIO == NULL)
+	      RETVAL = instreamPIO = PerlIO_importFILE(rl_instream, NULL);
+	    else
+	      RETVAL = instreamPIO;
 	    break;
 	  case 1:
-	    RETVAL = rl_outstream;
+	    if (outstreamPIO == NULL)
+	      RETVAL = outstreamPIO = PerlIO_importFILE(rl_outstream, NULL);
+	    else
+	      RETVAL = outstreamPIO;
 	    break;
 	  default:
 	    warn("Gnu.xs:_rl_fetch_iostream: Illegal `id' value: `%d'", id);
