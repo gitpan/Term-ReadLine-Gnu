@@ -2,7 +2,7 @@
 #
 #	XS.pm : perl function definition for Term::ReadLine::Gnu
 #
-#	$Id: XS.pm,v 1.10 2000-04-03 00:58:32+09 hayashi Exp $
+#	$Id: XS.pm,v 1.16 2001-02-28 02:23:26+09 hayashi Exp $
 #
 #	Copyright (c) 2000 Hiroo Hayashi.  All rights reserved.
 #
@@ -132,6 +132,30 @@ sub unbind_command ($;$) {
     }
 }
 
+sub rl_set_key ($$;$) {
+    my ($version) = $Attribs{library_version}
+	=~ /(\d+\.\d+)/;
+    if ($version < 4.2) {
+	carp "rl_set_key() is not supported.  Ignored\n";
+	return;
+    }
+    if (defined $_[2]) {
+	return _rl_set_key($_[0], _str2fn($_[1]), _str2map($_[2]));
+    } else {
+	return _rl_set_key($_[0], _str2fn($_[1]));
+    }
+}
+
+sub rl_macro_bind ($$;$) {
+    my ($version) = $Attribs{library_version}
+	=~ /(\d+\.\d+)/;
+    if (defined $_[2]) {
+	return _rl_macro_bind($_[0], $_[1], _str2map($_[2]));
+    } else {
+	return _rl_macro_bind($_[0], $_[1]);
+    }
+}
+
 sub rl_generic_bind ($$$;$) {
     if      ($_[0] == Term::ReadLine::Gnu::ISFUNC) {
 	if (defined $_[3]) {
@@ -171,6 +195,24 @@ sub rl_invoking_keyseqs ($;$) {
 	return _rl_invoking_keyseqs(_str2fn($_[0]), _str2map($_[1]));
     } else {
 	return _rl_invoking_keyseqs(_str2fn($_[0]));
+    }
+}
+
+sub rl_add_funmap_entry ($$) {
+    my ($version) = $Attribs{library_version}
+	=~ /(\d+\.\d+)/;
+    if ($version < 4.2) {
+	carp "rl_add_funmap_entry() is not supported.  Ignored\n";
+	return;
+    }
+    return _rl_add_funmap_entry($_[0], _str2fn($_[1]));
+}
+
+sub rl_tty_set_default_bindings (;$) {
+    if (defined $_[0]) {
+	return _rl_tty_set_defaut_bindings(_str2map($_[1]));
+    } else {
+	return _rl_tty_set_defaut_bindings();
     }
 }
 
@@ -246,7 +288,15 @@ sub ornaments {
 	if $rl_term_set eq '1';
     my @ts = split /,/, $rl_term_set, 4;
     my @rl_term_set
-	= map {$_ ? tgetstr($_) || '' : ''} @ts;
+	= map {
+	    # non-printing characters must be informed to readline
+	    my $t;
+	    ($_ and $t = tgetstr($_))
+		? (Term::ReadLine::Gnu::RL_PROMPT_START_IGNORE
+		   . $t
+		   . Term::ReadLine::Gnu::RL_PROMPT_END_IGNORE)
+		    : '';
+	} @ts;
     $Attribs{term_set} = \@rl_term_set;
     return $rl_term_set;
 }
@@ -317,7 +367,7 @@ sub change_ornaments {
     } elsif ($c =~ /v/i) {
 	ornaments('vb,,,');
     } else {
-	ding;
+	rl_ding;
     }
     rl_restore_prompt;
     rl_clear_message;

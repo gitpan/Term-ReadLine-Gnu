@@ -1,9 +1,9 @@
 #
 #	Gnu.pm --- The GNU Readline/History Library wrapper module
 #
-#	$Id: Gnu.pm,v 1.78 2000-04-03 00:57:51+09 hayashi Exp $
+#	$Id: Gnu.pm,v 1.87 2001-03-13 00:34:03+09 hayashi Exp $
 #
-#	Copyright (c) 2000 Hiroo Hayashi.  All rights reserved.
+#	Copyright (c) 2001 Hiroo Hayashi.  All rights reserved.
 #
 #	This program is free software; you can redistribute it and/or
 #	modify it under the same terms as Perl itself.
@@ -63,7 +63,7 @@ use Carp;
     use DynaLoader;
     use vars qw($VERSION @ISA @EXPORT_OK);
 
-    $VERSION = '1.09';
+    $VERSION = '1.10';
 
     # Term::ReadLine::Gnu::AU makes a function in
     # `Term::ReadLine::Gnu::XS' as a method.
@@ -73,7 +73,17 @@ use Carp;
     @EXPORT_OK = qw(RL_PROMPT_START_IGNORE RL_PROMPT_END_IGNORE
 		    NO_MATCH SINGLE_MATCH MULT_MATCH
 		    ISFUNC ISKMAP ISMACR
-		    UNDO_DELETE UNDO_INSERT UNDO_BEGIN UNDO_END);
+		    UNDO_DELETE UNDO_INSERT UNDO_BEGIN UNDO_END
+		    RL_STATE_NONE RL_STATE_INITIALIZING
+		    RL_STATE_INITIALIZED RL_STATE_TERMPREPPED
+		    RL_STATE_READCMD RL_STATE_METANEXT
+		    RL_STATE_DISPATCHING RL_STATE_MOREINPUT
+		    RL_STATE_ISEARCH RL_STATE_NSEARCH
+		    RL_STATE_SEARCH RL_STATE_NUMERICARG
+		    RL_STATE_MACROINPUT RL_STATE_MACRODEF
+		    RL_STATE_OVERWRITE RL_STATE_COMPLETING
+		    RL_STATE_SIGHANDLER RL_STATE_UNDOING
+		    RL_STATE_DONE);
 
     bootstrap Term::ReadLine::Gnu $VERSION; # DynaLoader
 }
@@ -125,6 +135,27 @@ sub UNDO_DELETE	{ 0; }
 sub UNDO_INSERT	{ 1; }
 sub UNDO_BEGIN	{ 2; }
 sub UNDO_END	{ 3; }
+
+# for rl_readline_state
+sub RL_STATE_NONE		{ 0x00000; } # no state; before first call
+sub RL_STATE_INITIALIZING	{ 0x00001; } # initializing
+sub RL_STATE_INITIALIZED	{ 0x00002; } # initialization done
+sub RL_STATE_TERMPREPPED	{ 0x00004; } # terminal is prepped
+sub RL_STATE_READCMD		{ 0x00008; } # reading a command key
+sub RL_STATE_METANEXT		{ 0x00010; } # reading input after ESC
+sub RL_STATE_DISPATCHING	{ 0x00020; } # dispatching to a command
+sub RL_STATE_MOREINPUT		{ 0x00040; } # reading more input in a command function
+sub RL_STATE_ISEARCH		{ 0x00080; } # doing incremental search
+sub RL_STATE_NSEARCH		{ 0x00100; } # doing non-inc search
+sub RL_STATE_SEARCH		{ 0x00200; } # doing a history search
+sub RL_STATE_NUMERICARG		{ 0x00400; } # reading numeric argument
+sub RL_STATE_MACROINPUT		{ 0x00800; } # getting input from a macro
+sub RL_STATE_MACRODEF		{ 0x01000; } # defining keyboard macro
+sub RL_STATE_OVERWRITE		{ 0x02000; } # overwrite mode
+sub RL_STATE_COMPLETING		{ 0x04000; } # doing completion
+sub RL_STATE_SIGHANDLER		{ 0x08000; } # in readline sighandler
+sub RL_STATE_UNDOING		{ 0x10000; } # doing an undo
+sub RL_STATE_DONE		{ 0x80000; } # done; accepted line
 
 #
 #	Methods Definition
@@ -219,10 +250,7 @@ sub readline {			# should be ReadLine
     my ($prompt, $preput) = @_;
 
     # ornament support (now prompt only)
-    # non-printing characters must be told to readline
-    $prompt = RL_PROMPT_START_IGNORE . ${$Attribs{term_set}}[0] . RL_PROMPT_END_IGNORE
-	. $prompt
-	    . RL_PROMPT_START_IGNORE . ${$Attribs{term_set}}[1] . RL_PROMPT_END_IGNORE;
+    $prompt = ${$Attribs{term_set}}[0] . $prompt . ${$Attribs{term_set}}[1];
 
     # `completion_function' support for compatibility with
     # Term:ReadLine::Perl.  Prefer $completion_entry_function, since a
@@ -372,9 +400,7 @@ sub CallbackHandlerInstall {
     $Attribs{_callback_handler} = $lhandler;
 
     # ornament support (now prompt only)
-    $prompt = RL_PROMPT_START_IGNORE . ${$Attribs{term_set}}[0] . RL_PROMPT_END_IGNORE
-	. $prompt
-	    . RL_PROMPT_START_IGNORE . ${$Attribs{term_set}}[1] . RL_PROMPT_END_IGNORE;
+    $prompt = ${$Attribs{term_set}}[0] . $prompt . ${$Attribs{term_set}}[1];
 
     $Attribs{completion_entry_function} = $Attribs{_trp_completion_function}
 	if (!defined $Attribs{completion_entry_function}
@@ -443,6 +469,8 @@ use vars qw(%_rl_vars);
        rl_special_prefixes			=> ['S', 10],
        history_no_expand_chars			=> ['S', 11],
        history_search_delimiter_chars		=> ['S', 12],
+       rl_executing_macro			=> ['S', 13], # GRL4.2
+       history_word_delimiters			=> ['S', 14], # GRL4.2
        
        rl_point					=> ['I', 0],
        rl_end					=> ['I', 1],
@@ -457,15 +485,25 @@ use vars qw(%_rl_vars);
        rl_inhibit_completion			=> ['I', 10],
        history_base				=> ['I', 11],
        history_length				=> ['I', 12],
-       max_input_history			=> ['I', 13],
+       history_max_entries			=> ['I', 13],
+       max_input_history			=> ['I', 13], # before GRL 4.2
        history_expansion_char			=> ['C', 14],
        history_subst_char			=> ['C', 15],
        history_comment_char			=> ['C', 16],
        history_quotes_inhibit_expansion		=> ['I', 17],
-       rl_erase_empty_line			=> ['I', 18], # added GRL 4.0
-       rl_catch_signals				=> ['I', 19], # added GRL 4.0
-       rl_catch_sigwinch			=> ['I', 20], # added GRL 4.0
-       rl_already_prompted			=> ['I', 21], # added GRL 4.1
+       rl_erase_empty_line			=> ['I', 18], # GRL 4.0
+       rl_catch_signals				=> ['I', 19], # GRL 4.0
+       rl_catch_sigwinch			=> ['I', 20], # GRL 4.0
+       rl_already_prompted			=> ['I', 21], # GRL 4.1
+       rl_num_chars_to_read			=> ['I', 22], # GRL 4.2
+       rl_dispatching				=> ['I', 23], # GRL 4.2
+       rl_gnu_readline_p			=> ['I', 24], # GRL 4.2
+       rl_readline_state			=> ['I', 25], # GRL 4.2
+       rl_explicit_arg				=> ['I', 26], # GRL 4.2
+       rl_numeric_arg				=> ['I', 27], # GRL 4.2
+       rl_editing_mode				=> ['I', 28], # GRL 4.2
+       rl_attempted_completion_over		=> ['I', 29], # GRL 4.2
+       rl_completion_type			=> ['I', 30], # GRL 4.2
 
        rl_startup_hook				=> ['F', 0],
        rl_event_hook				=> ['F', 1],
@@ -479,8 +517,10 @@ use vars qw(%_rl_vars);
        rl_ignore_some_completions_function	=> ['F', 9],
        rl_directory_completion_hook		=> ['F', 10],
        history_inhibit_expansion_function	=> ['F', 11],
-       rl_pre_input_hook			=> ['F', 12], # added GRL 4.0
-       rl_completion_display_matches_hook	=> ['F', 13], # added GRL 4.0
+       rl_pre_input_hook			=> ['F', 12], # GRL 4.0
+       rl_completion_display_matches_hook	=> ['F', 13], # GRL 4.0
+       rl_prep_term_function			=> ['F', 14], # GRL 4.2
+       rl_deprep_term_function			=> ['F', 15], # GRL 4.2
 
        rl_instream				=> ['IO', 0],
        rl_outstream				=> ['IO', 1],
@@ -590,8 +630,8 @@ foreach (keys %Term::ReadLine::Gnu::Var::_rl_vars) {
 	 rl_redisplay
 	 rl_callback_read_char
 	 rl_display_match_list
-	 filename_completion_function
-	 username_completion_function
+	 rl_filename_completion_function
+	 rl_username_completion_function
 	 list_completion_function
          _trp_completion_function);
     # auto-split subroutine cannot be processed in the map loop above
@@ -723,6 +763,11 @@ Bind C<KEY> to the null function.  Returns non-zero in case of error.
 	int	rl_unbind_command(str command,
 				  Keymap|str map = rl_get_keymap())
 
+=item C<set_key(KEYSEQ, FUNCTION [,MAP])>
+
+	int	rl_set_key(str keyseq, FunctionPtr|str function,
+				  Keymap|str map = rl_get_keymap())
+
 =item C<generic_bind(TYPE, KEYSEQ, DATA, [,MAP])>
 
 	int	rl_generic_bind(int type, str keyseq,
@@ -774,9 +819,13 @@ detail see 'GNU Readline Library Manual'.
 
 	void	rl_list_funmap_names()
 
-=item C<funmap_names> (undocumented)
+=item C<funmap_names>
 
 	(@str)	rl_funmap_names()
+
+=item C<add_funmap_entry(NAME, FUNCTION)>
+
+	int	rl_add_funmap_entry(char *name, FunctionPtr|str function)
 
 =back
 
@@ -798,7 +847,7 @@ detail see 'GNU Readline Library Manual'.
 
 =item C<free_undo_list>
 
-	void	free_undo_list()
+	void	rl_free_undo_list()
 
 =item C<do_undo>
 
@@ -834,9 +883,17 @@ detail see 'GNU Readline Library Manual'.
 
 	int	rl_reset_line_state()
 
+=item C<rl_show_char(C)>
+
+	int	rl_show_char(int c)
+
 =item C<message(FMT[, ...])>
 
 	int	rl_message(str fmt, ...)
+
+=item C<crlf>
+
+	int	rl_crlf()			# GRL 4.2
 
 =item C<clear_message>
 
@@ -850,6 +907,14 @@ detail see 'GNU Readline Library Manual'.
 
 	void	rl_restore_prompt()
 
+=item C<expand_prompt(PROMPT)>
+
+	int	rl_expand_prompt(str prompt)	# GRL 4.2
+
+=item C<set_prompt(PROMPT)>
+
+	int	rl_set_prompt(const str prompt)	# GRL 4.2
+
 =back
 
 =item Modifying Text
@@ -862,19 +927,23 @@ detail see 'GNU Readline Library Manual'.
 
 =item C<delete_text([START [,END]])>
 
-	int	rl_delete_text(start = 0, end = rl_end)
+	int	rl_delete_text(int start = 0, int end = rl_end)
 
 =item C<copy_text([START [,END]])>
 
-	str	rl_copy_text(start = 0, end = rl_end)
+	str	rl_copy_text(int start = 0, int end = rl_end)
 
 =item C<kill_text([START [,END]])>
 
-	int	rl_kill_text(start = 0, end = rl_end)
+	int	rl_kill_text(int start = 0, int end = rl_end)
+
+=item C<push_macro_input(MACRO)>
+
+	int	rl_push_macro_input(str macro)
 
 =back
 
-=item Utility Functions
+=item Character Input
 
 =over 4
 
@@ -882,25 +951,65 @@ detail see 'GNU Readline Library Manual'.
 
 	int	rl_read_key()
 
-=item C<getc(FILE)>
+=item C<getc(STREAM)>
 
-	int	rl_getc(FILE *)
+	int	rl_getc(FILE *STREAM)
 
 =item C<stuff_char(C)>
 
 	int	rl_stuff_char(int c)
 
+=item C<execute_next(C)>
+
+	int	rl_execute_next(int c)		# GRL 4.2
+
+=item C<clear_pending_input()>
+
+	int	rl_clear_pending_input()	# GRL 4.2
+
+=item C<set_keyboard_input_timeout(uSEC)>
+
+	int	rl_set_keyboard_input_timeout(int usec)	# GRL 4.2
+
+=back
+
+=item Terminal Management
+
+=over 4
+
+=item C<prep_terminal(META_FLAG)>
+
+	void	rl_prep_terminal(int META_FLAG)	# GRL 4.2
+
+=item C<deprep_terminal()>
+
+	void	rl_deprep_terminal()		# GRL 4.2
+
+=item C<tty_set_default_bindings(KMAP)>
+
+	void	rl_tty_set_default_bindings([Keymap KMAP])	# GRL 4.2
+
+=item C<reset_terminal([TERMINAL_NAME])>
+
+	int	rl_reset_terminal(str terminal_name = getenv($TERM)) # GRL 4.2
+
+=back
+
+=item Utility Functions
+
+=over 4
+
 =item C<initialize>
 
 	int	rl_initialize()
 
-=item C<reset_terminal([TERMINAL_NAME])>
-
-	int	rl_reset_terminal(str terminal_name = getenv($TERM))
-
 =item C<ding>
 
-	int	ding()
+	int	rl_ding()
+
+=item C<alphabetic(C)>
+
+	int	rl_alphabetic(int C)
 
 =item C<display_match_list(MATCHES [,LEN [,MAX]])>
 
@@ -911,6 +1020,32 @@ completion, it is not displayed.  See the descriptions of
 C<completion_matches()>.
 
 When C<MAX> is ommited, the max length of an item in @matches is used.
+
+=back
+
+=item Miscellaneous Functions
+
+=item C<macro_bind(KEYSEQ, MACRO [,MAP])>
+
+	int	rl_macro_bind(const str keyseq, const str macro, Keymap map)
+
+=item C<macro_dumper(READABLE)>
+
+	int	rl_macro_dumper(int readline)
+
+=item C<variable_bind(VARIABLE, VALUE)>
+
+	int	rl_variable_bind(const str variable, const str value)
+
+=item C<variable_dumper(READABLE)>
+
+	int	rl_variable_dumper(int readline)
+
+=item C<set_paren_blink_timeout(uSEC)>
+
+	int	rl_set_paren_blink_timeout(usec)	# GRL 4.2
+
+=over 4
 
 =back
 
@@ -954,6 +1089,14 @@ When C<MAX> is ommited, the max length of an item in @matches is used.
 
 	void	rl_resize_terminal()	# GRL 4.0
 
+=item C<set_screen_size(ROWS, COLS)>
+
+	void	rl_set_screen_size(int ROWS, int COLS)	# GRL 4.2
+
+=item C<get_screen_size()>
+
+	(int rows, int cols)	rl_get_screen_size()	# GRL 4.2
+
 =item C<set_signals>
 
 	int	rl_set_signals()	# GRL 4.0
@@ -974,16 +1117,16 @@ When C<MAX> is ommited, the max length of an item in @matches is used.
 
 =item C<completion_matches(TEXT [,FUNC])>
 
-	(@str)	completion_matches(str text,
-				   pfunc func = filename_completion_function)
+	(@str)	rl_completion_matches(str text,
+				      pfunc func = filename_completion_function)
 
 =item C<filename_completion_function(TEXT, STATE)>
 
-	str	filename_completion_function(str text, int state)
+	str	rl_filename_completion_function(str text, int state)
 
 =item C<username_completion_function(TEXT, STATE)>
 
-	str	username_completion_function(str text, int state)
+	str	rl_username_completion_function(str text, int state)
 
 =item C<list_completion_function(TEXT, STATE)>
 
@@ -1164,14 +1307,6 @@ F<~/.history>.  Returns true if successful, or false if not.
 
 Note that this function returns C<expansion> in scalar context.
 
-=item C<history_arg_extract(LINE, [FIRST [,LAST]])>
-
-	str history_arg_extract(str line, int first = 0, int last = '$')
-
-=cut
-
-# '	to make emacs font-lock happy
-
 =item C<get_history_event(STRING, CINDEX [,QCHAR])>
 
 	(str text, int cindex) = get_history_event(str  string,
@@ -1181,6 +1316,10 @@ Note that this function returns C<expansion> in scalar context.
 =item C<history_tokenize(LINE)>
 
 	(@str)	history_tokenize(str line)
+
+=item C<history_arg_extract(LINE, [FIRST [,LAST]])>
+
+	str history_arg_extract(str line, int first = 0, int last = '$')
 
 =back
 
@@ -1211,11 +1350,14 @@ Examples:
 	int rl_end
 	int rl_mark
 	int rl_done		
+	int rl_num_chars_to_read (GRL 4.2)
 	int rl_pending_input
+	int rl_dispatching (GRL 4.2)
 	int rl_erase_empty_line (GRL 4.0)
 	str rl_prompt (read only)
 	int rl_already_prompted (GRL 4.1)
 	str rl_library_version (read only)
+	int rl_gnu_readline_p (GRL 4.2)
 	str rl_terminal_name
 	str rl_readline_name
 	filehandle rl_instream
@@ -1225,9 +1367,16 @@ Examples:
 	pfunc rl_event_hook
 	pfunc rl_getc_function
 	pfunc rl_redisplay_function
-	pfunc rl_last_func (not documented)
+	pfunc rl_prep_term_function (GRL 4.2?)
+	pfunc rl_deprep_term_function (GRL 4.2?)
+	pfunc rl_last_func (GRL 4.2)
 	Keymap rl_executing_keymap (read only)
 	Keymap rl_binding_keymap (read only)
+	str rl_executing_macro (GRL 4.2)
+	int rl_readline_state (GRL 4.2)
+	int rl_explicit_arg (GRL 4.2)
+	int rl_numeric_arg (GRL 4.2)
+	int rl_editing_mode (GRL 4.2)
 
 =item Signal Handling Variables
 
@@ -1252,6 +1401,8 @@ Examples:
 	int rl_ignore_completion_duplicates
 	int rl_filename_completion_desired
 	int rl_filename_quoting_desired
+	int rl_attempted_completion_over (GRL 4.2)
+	int rl_completion_type (GRL 4.2)
 	int rl_inhibit_completion
 	pfunc rl_ignore_some_completion_function
 	pfunc rl_directory_completion_hook
@@ -1261,10 +1412,11 @@ Examples:
 
 	int history_base
 	int history_length
-	int max_input_history (read only)
+	int history_max_entries (called `max_input_history'. read only)
 	char history_expansion_char
 	char history_subst_char
 	char history_comment_char
+	str history_word_delimiters (GRL 4.2)
 	str history_no_expand_chars
 	str history_search_delimiter_chars
 	int history_quotes_inhibit_expansion
@@ -1276,8 +1428,8 @@ Examples:
 	rl_redisplay
 	rl_callback_read_char
 	rl_display_match_list
-	filename_completion_function
-	username_completion_function
+	rl_filename_completion_function
+	rl_username_completion_function
 	list_completion_function
 	shadow_redisplay
 	Tk_getc
