@@ -4,6 +4,10 @@
 #
 # POD documentation after __END__
 
+# This program is contributed by Achim Bohnet.  It demonstrates
+# how to use the callback functions in the GNU Readline Library.
+# You can do same thing by tkRunning feature.     Hiroo Hayashi
+
 require 5.003_92;
 
 use Tk;
