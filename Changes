@@ -1,0 +1,38 @@
+Revision history for Perl extension Term::ReadLine::Gnu.
+
+0.06  Wed Feb  5 01:26:27 1997
+	- support for non ANSI C compiler
+	- rename addhistory to AddHistory
+	- checked by gcc -Wall
+	- fix void_arg_func_wrapper()
+	- add hook for rl_startup_hook in readline()
+	- update documents
+
+0.05  Sat Jan 25 00:06:56 1997
+	- Fix for Perl 5.002 and 5.003
+		escape from an strange Exporter's behavior 
+		remove white spaces in prototype
+		add argument explicitly
+
+0.04  Thu Jan 23 00:25:45 1997
+	- This revision supports readline-2.1 or later.  readline-2.0
+	  is not supported.
+	- implement almost all GNU Readline/History Library variables
+	  and functions
+	- use filehandle directly to access rl_instream and rl_outstream
+	- define operate_and_get_next and bind to "\C-o" by default
+
+0.03  Sun Nov 24 23:34:27 1996
+	- OS/2 support by Ilya Zakharevich <ilya@math.ohio-state.edu>
+	- implement $rl_completer_word_break_characters
+	- define HAVE_STRING_H by checking $Config{strings}
+	- remove verbose prototypes on methods
+
+0.02  Thu Nov 21 00:22:11 1996
+	- fix to install on
+		SunOS 4.1.3, Solaris 2.3, AIX 4.1.3
+
+0.01  Wed Nov 20 01:14:09 1996
+	- The 1st alpha release revision (tested on Linux 1.2.13)
+
+

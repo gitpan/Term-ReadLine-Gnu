@@ -1,0 +1,10 @@
+Changes
+Gnu.pm
+Gnu.xs
+INSTALL
+MANIFEST
+Makefile.PL
+README
+perlsh
+t/readline.t
+typemap

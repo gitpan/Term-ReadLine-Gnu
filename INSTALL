@@ -1,0 +1,106 @@
+#	$Id: INSTALL,v 1.6 1997-02-05 01:19:43+09 hayashi Exp $
+
+1. How to Install Term::ReadLine::Gnu
+
+1.1 Install GNU Readline library 2.1 and its header files.
+
+	See the section `How to Install GNU Readline Library'.
+
+1.2 Edit Makefile.PL
+
+	Specify directory for libreadline.a ('LIBS') and include files
+	of GNU Readline library ('INC').
+
+1.3 Make and install
+
+	$ perl Makefile.PL
+	$ make
+	$ make test
+	$ make install
+
+
+2. How to Install GNU Readline Library
+
+Now this module supports only GNU Readline Library 2.1 which is
+included in the GNU Bash version 2.0 distribution which was released
+on Chirstmas of 1996.  (There is a plan to make standalone package in
+the near future, but not yet.)
+
+In following example, the install prefix directory is
+`/usr/local/gnu'.  If you install the library and header files in
+another directory, you must edit `LIBS' and/or `INC' section in
+Makefile.PL.
+
+2.1. libreadline.a in bash-2.0.tar.gz
+
+	The libreadline.a which is made when you make bash does not
+	work as stand-alone library.  You must make it without defining
+	a CPP macro `SHELL'.
+
+	1. get and extract bash-2.0.tar.gz
+	2. add following patch
+	  (I reported this patch to bug-bash@prep.ai.mit.edu, so I
+	   hope this patch will not be required by the future
+	   releases.)
+
+========================================================================
+*** lib/readline/Makefile.in.orig	Tue Nov 26 02:40:21 1996
+--- lib/readline/Makefile.in	Fri Dec 27 00:16:50 1996
+***************
+*** 4,9 ****
+--- 4,16 ----
+  #								   #
+  ####################################################################
+  
++ # Include some boilerplate Gnu makefile definitions.
++ prefix = @prefix@
++ 
++ exec_prefix = @exec_prefix@
++ libdir = $(exec_prefix)/lib
++ includedir = @includedir@
++ 
+  srcdir = @srcdir@
+  VPATH = .:@srcdir@
+  topdir = @top_srcdir@
+***************
+*** 108,114 ****
+  	done
+  	-${MV} $(libdir)/libreadline.a $(libdir)/libreadline.old
+  	${INSTALL_DATA} libreadline.a $(libdir)/libreadline.a
+! 	-test -n "$(RANLIB)" && $(RANLIB) -t $(bindir)/libreadline.a
+  
+  installdirs:	$(topdir)/support/mkdirs
+  	$(SHELL) $(topdir)/support/mkdirs $(includedir) \
+--- 115,121 ----
+  	done
+  	-${MV} $(libdir)/libreadline.a $(libdir)/libreadline.old
+  	${INSTALL_DATA} libreadline.a $(libdir)/libreadline.a
+! 	-test -n "$(RANLIB)" && $(RANLIB) -t $(libdir)/libreadline.a
+  
+  installdirs:	$(topdir)/support/mkdirs
+  	$(SHELL) $(topdir)/support/mkdirs $(includedir) \
+
+========================================================================
+
+	3. configure
+		$ ./configure --prefix=/usr/local/gnu
+	4. change directory to the Readline Library directory
+		$ cd lib/readline
+	5. remove *.a and *.o, if you made libreadline.a for bash in
+	   the directory
+		$ make clean
+	6. make
+		$ make
+	7. install
+		$ make install
+
+2.2. readline-2.1.tar.gz (not released yet)
+
+	1. get and extract readline-2.1.tar.gz
+
+	2. configure
+		$ ./configure --prefix=/usr/local/gnu
+	3. make and install
+		$ make install
+
+EOF
