@@ -1,9 +1,9 @@
 #
 #	Gnu.pm --- The GNU Readline/History Library wrapper module
 #
-#	$Id: Gnu.pm,v 1.47 1997-08-24 23:58:55+09 hayashi Exp $
+#	$Id: Gnu.pm,v 1.50 1998-03-27 00:40:48+09 hayashi Exp $
 #
-#	Copyright (c) 1996,1997 Hiroo Hayashi.  All rights reserved.
+#	Copyright (c) 1996,1997,1998 Hiroo Hayashi.  All rights reserved.
 #
 #	This program is free software; you can redistribute it and/or
 #	modify it under the same terms as Perl itself.
@@ -47,18 +47,30 @@ History Library Manual'.
 =cut
 
 use strict;
-use vars qw($VERSION @ISA @EXPORT_OK %Attribs %Features);
 use Carp;
 
-$VERSION = '0.09';
+{
+    use Exporter ();
+    use DynaLoader;
+    use vars qw($VERSION @ISA @EXPORT_OK);
 
-require Exporter;
-require DynaLoader;
+    $VERSION = '0.10';
 
-@ISA = qw(Term::ReadLine::Stub Term::ReadLine::Gnu::AU Exporter DynaLoader);
+    @ISA = qw(Term::ReadLine::Stub Term::ReadLine::Gnu::AU
+	      Exporter DynaLoader);
 
+    @EXPORT_OK = qw(NO_MATCH SINGLE_MATCH MULT_MATCH
+		    ISFUNC ISKMAP ISMACR
+		    UNDO_DELETE UNDO_INSERT UNDO_BEGIN UNDO_END);
+
+    bootstrap Term::ReadLine::Gnu $VERSION;
+}
+
+#	Global Variables
 my $Operate_Index;
 my $Next_Operate_Index;
+
+use vars qw(%Attribs %Features);
 
 %Attribs  = (
 	     do_expand => 0,
@@ -66,9 +78,11 @@ my $Next_Operate_Index;
 	    );
 %Features = (
 	     appname => 1, minline => 1, autohistory => 1,
-	     getHistory => 1, setHistory => 1, addhistory => 1,
+	     getHistory => 1, setHistory => 1, addHistory => 1,
 	     readHistory => 1, writeHistory => 1,
-	     preput => 1, tkRunning => 1, attribs => 1,
+	     preput => 1, attribs => 1, newTTY => 1,
+	     tkRunning => Term::ReadLine::Stub->Features->{'tkRunning'},
+	     ornaments => Term::ReadLine::Stub->Features->{'ornaments'},
 	     stiflehistory => 1,
 	    );
 
@@ -76,12 +90,9 @@ sub Attribs { \%Attribs; }
 sub Features { \%Features; }
 
 #
-#	Variable lists to be Export_OK
-#
-
-#
 #	GNU Readline/History Library constant definition
-#
+#	These are included in @EXPORT_OK.
+
 # for rl_filename_quoting_function
 sub NO_MATCH	 { 0; }
 sub SINGLE_MATCH { 1; }
@@ -98,15 +109,9 @@ sub UNDO_INSERT	{ 1; }
 sub UNDO_BEGIN	{ 2; }
 sub UNDO_END	{ 3; }
 
-@EXPORT_OK = qw(NO_MATCH SINGLE_MATCH MULT_MATCH
-		ISFUNC ISKMAP ISMACR
-		UNDO_DELETE UNDO_INSERT UNDO_BEGIN UNDO_END);
-
-bootstrap Term::ReadLine::Gnu $VERSION;
-
-# Preloaded methods go here.
-
-# Autoload methods go after =cut, and are processed by the autosplit program.
+#
+#	Methods Definition
+#
 
 =over 4
 
@@ -160,6 +165,8 @@ sub new {
     $self;
 }
 
+sub DESTROY {}
+
 =item C<readline(PROMPT[,PREPUT])>
 
 gets an input line, with actual C<GNU Readline> support.  Trailing
@@ -179,6 +186,10 @@ $Term::ReadLine::registered = $Term::ReadLine::registered;
 sub readline {			# should be ReadLine
     my $self = shift;
     my ($prompt, $preput) = @_;
+
+    # ornament support (now prompt only)
+    $prompt = $Term::ReadLine::Stub::rl_term_set[0]
+	. $prompt . $Term::ReadLine::Stub::rl_term_set[1];
 
     # TkRunning support
     if (not $Term::ReadLine::registered and $Term::ReadLine::toloop
@@ -227,7 +238,8 @@ sub readline {			# should be ReadLine
     }
 
     # add to history buffer
-    $self->add_history($line) if (length($line) >= $self->{MinLength});
+    $self->add_history($line) 
+       if ($self->{MinLength} > 0 && length($line) >= $self->{MinLength});
 
     return $line;
 }
@@ -279,7 +291,7 @@ sub MinLine {
     $self->{MinLength} = shift;
     $old_minlength;
 }
-
+    
 # findConsole is defined in ReadLine.pm.
 
 =item C<findConsole>
@@ -303,7 +315,7 @@ minimal interface: C<appname> should be present if the first argument
 to C<new> is recognized, and C<minline> should be present if
 C<MinLine> method is not dummy.  C<autohistory> should be present if
 lines are put into history automatically (maybe subject to
-C<MinLine>), and C<addhistory> if C<AddHistory> method is not dummy. 
+C<MinLine>), and C<addHistory> if C<AddHistory> method is not dummy. 
 C<preput> means the second argument to C<readline> method is processed.
 C<getHistory> and C<setHistory> denote that the corresponding methods are 
 present. C<tkRunning> denotes that a Tk application may run while ReadLine
@@ -312,6 +324,16 @@ is getting input B<(undocumented feature)>.
 =back
 
 =cut
+
+# Not tested yet.  How do I use this?
+sub newTTY {
+    my ($self, $in, $out) = @_;
+    $Attribs{instream}  = $in;
+    $Attribs{outstream} = $out;
+    my $sel = select($out);
+    $| = 1;			# for DB::OUT
+    select($sel);
+}
 
 
 #
@@ -335,13 +357,7 @@ sub SetHistory {
 
 sub GetHistory {
     my $self = shift;
-    my ($i, $history_base, $history_length, @d);
-    $history_base   = $Attribs{history_base};
-    $history_length = $Attribs{history_length};
-    for ($i = $history_base; $i < $history_base + $history_length; $i++) {
-	push(@d, $self->history_get($i));
-    }
-    @d;
+    $self->history_list();
 }
 
 sub ReadHistory {
@@ -359,7 +375,7 @@ use Carp;
 use strict;
 
 #
-#	Readline function wrappers
+#	Readline Library function wrappers
 #
 
 # Convert keymap name to Keymap if the argument is not reference to Keymap
@@ -452,13 +468,11 @@ sub rl_message {
 
     sub list_completion_function ( $$ ) {
 	my($text, $state) = @_;
-	my $entry;
 
 	$i = $state ? $i + 1 : 0; # clear counter at the first call
 	my $cw = $Term::ReadLine::Gnu::Attribs{completion_word};
 	for (; $i <= $#{$cw}; $i++) {
-	    return $entry
-		if (($entry = $cw->[$i]) =~ /^$text/);
+	    return $cw->[$i] if ($cw->[$i] =~ /^$text/);
 	}
 	return undef;
     }
@@ -487,12 +501,41 @@ sub operate_and_get_next {
 rl_add_defun('operate-and-get-next', \&operate_and_get_next, ord "\co");
 
 #
-#	for compatibility with Term::ReadLine::Gnu
+#	for compatibility with Term::ReadLine::Perl
 #
 sub filename_list {
     shift;
     my ($text) = @_;
     return completion_matches($text, \&filename_completion_function);
+}
+
+#
+#	History Library function wrappers
+#
+sub history_list () {
+    my ($i, $history_base, $history_length, @d);
+    $history_base   = $Term::ReadLine::Gnu::Attribs{history_base};
+    $history_length = $Term::ReadLine::Gnu::Attribs{history_length};
+    for ($i = $history_base; $i < $history_base + $history_length; $i++) {
+	push(@d, history_get($i));
+    }
+    @d;
+}
+
+sub history_arg_extract ( ;$$$ ) {
+    my ($line, $first, $last) = @_;
+    $line  = $_      unless defined $line;
+    $first = 0       unless defined $first;
+    $last  = ord '$' unless defined $last; # '
+    $first = ord '$' if defined $first and $first eq '$'; # '
+    $last  = ord '$' if defined $last  and $last  eq '$'; # '
+    &_history_arg_extract($line, $first, $last);
+}
+
+*read_history = \&read_history_range;
+
+sub get_history_event ( $$;$ ) {
+    _get_history_event($_[0], $_[1], defined $_[2] ? ord $_[2] : 0);
 }
 
 #
@@ -532,10 +575,11 @@ use vars qw(%_rl_vars);
        rl_inhibit_completion			=> ['I', 10],
        history_base				=> ['I', 11],
        history_length				=> ['I', 12],
-       history_expansion_char			=> ['C', 13],
-       history_subst_char			=> ['C', 14],
-       history_comment_char			=> ['C', 15],
-       history_quotes_inhibit_expansion		=> ['I', 16],
+       max_input_history			=> ['I', 13],
+       history_expansion_char			=> ['C', 14],
+       history_subst_char			=> ['C', 15],
+       history_comment_char			=> ['C', 16],
+       history_quotes_inhibit_expansion		=> ['I', 17],
 
        rl_startup_hook				=> ['F', 0],
        rl_event_hook				=> ['F', 1],
@@ -637,20 +681,18 @@ foreach (keys %Term::ReadLine::Gnu::Var::_rl_vars) {
 }
 
 #	add reference to some functions
-my @_rl_funcs = qw(rl_getc
-		   rl_callback_read_char
-		   filename_completion_function
-		   username_completion_function
-		   list_completion_function);
-
 {
     my ($name, $fname);
     no strict 'refs';
-    foreach (@_rl_funcs) {
+    map {
 	($name = $_) =~ s/^rl_//; # strip leading `rl_'
 	$fname = 'Term::ReadLine::Gnu::XS::' . $_;
 	$Attribs{$name} = \&$fname; # symbolic reference
-    }
+    } qw(rl_getc
+	 rl_callback_read_char
+	 filename_completion_function
+	 username_completion_function
+	 list_completion_function);
 }
 
 #
@@ -1012,7 +1054,14 @@ detail see 'GNU Readline Library Manual'.
 	int	stifle_history(int max|undef)
 
 stifles the history list, remembering only the last C<MAX> entries.
-If C<MAX> is undef,  remembers all entries.
+If C<MAX> is undef, remembers all entries.  This is a replacement
+of unstifle_history().
+
+=item C<unstifle_history>
+
+	int	unstifle_history()
+
+This is equivalent with 'stifle_history(undef)'.
 
 =item C<SetHistory(LINE1 [, LINE2, ...])>
 
@@ -1085,14 +1134,19 @@ returns the history of input as a list, if actual C<readline> is present.
 
 =over 4
 
-=item C<history_search(STRING [,DIRECTION [,POS]])>
+=item C<history_search(STRING [,DIRECTION])>
 
-	int	history_search(str string,
-			       int direction = -1, int pos = where_history())
+	int	history_search(str string, int direction = -1)
 
 =item C<history_search_prefix(STRING [,DIRECTION])>
 
 	int	history_search_prefix(str string, int direction = -1)
+
+=item C<history_search_pos(STRING [,DIRECTION [,POS]])>
+
+	int	history_search_pos(str string,
+				   int direction = -1,
+				   int pos = where_history())
 
 =back
 
@@ -1102,6 +1156,9 @@ returns the history of input as a list, if actual C<readline> is present.
 
 =item C<ReadHistory([FILENAME [,FROM [,TO]]])>
 
+	int	read_history(str filename = '~/.history',
+			     int from = 0, int to = -1)
+
 	int	read_history_range(str filename = '~/.history',
 				   int from = 0, int to = -1)
 
@@ -1110,7 +1167,8 @@ time.  If C<FILENAME> is false, then read from F<~/.history>.  Start
 reading at line C<FROM> and end at C<TO>.  If C<FROM> is omitted or
 zero, start at the beginning.  If C<TO> is omitted or less than
 C<FROM>, then read until the end of the file.  Returns true if
-successful, or false if not.
+successful, or false if not.  C<read_history()> is an aliase of
+C<read_history_range()>.
 
 =item C<WriteHistory([FILENAME])>
 
@@ -1139,6 +1197,24 @@ F<~/.history>.  Returns true if successful, or false if not.
 =item C<history_expand(LINE)>
 
 	(int result, str expansion) history_expand(str line)
+
+=item C<history_arg_extract(LINE, [FIRST [,LAST]])>
+
+	str history_arg_extract(str line, int first = 0, int last = '$')
+
+=cut
+
+# '	to make emacs font-lock happy
+
+=item C<get_history_event(STRING, CINDEX [,QCHAR])>
+
+	(str text, int cindex) = get_history_event(str  string,
+						   int  cindex,
+						   char qchar = '\0')
+
+=item C<history_tokenize(LINE)>
+
+	(@str)	history_tokenize(str line)
 
 =back
 
@@ -1207,7 +1283,7 @@ Examples:
 
 	int history_base
 	int history_length
-	int max_input_history (not implemented)
+	int max_input_history (read only)
 	char history_expansion_char
 	char history_subst_char
 	char history_comment_char
@@ -1382,11 +1458,13 @@ GNU History Library Manual
 
 Term::ReadLine
 
-Term::ReadLine::Perl (Term-ReadLine-xx.tar.gz)
+Term::ReadLine::Perl (Term-ReadLine-Perl-xx.tar.gz)
 
 =head1 AUTHOR
 
-Hiroo Hayashi <hiroo.hayashi@toshiba.co.jp>
+Hiroo Hayashi <hiroo.hayashi@computer.org>
+
+http://www.perl.org/CPAN/authors/Hiroo_HAYASHI/
 
 =head1 TODO
 
@@ -1401,14 +1479,14 @@ Test routines for following variable and functions are required.
 
 	rl_complete_internal()
 
-	history_search()
-	history_search_prefix()
-
 =head1 BUGS
 
 rl_add_defun() can define up to 16 functions.
 
-rl_message() does not work.  See display_readline_version() in
-t/readline.t.
+Ornament feature works only on prompt strings.  It requires very hard
+hacking of display.c:rl_redisplay() in GNU Readline library to
+ornament input line.
+
+newTTY() is not tested yet.
 
 =cut

@@ -1,6 +1,31 @@
-$Id: Changes,v 1.10 1997-08-25 00:50:29+09 hayashi Exp $
+$Id: Changes,v 1.11 1998-04-01 00:12:06+09 hayashi Exp $
 
 Revision history for Perl extension Term::ReadLine::Gnu.
+
+0.10  1998-03-31
+	- new functions/variables
+		ornaments support
+		newTTY() (not tested)
+		max_input_history
+		read_history() (an aliase of read_history_range())
+		unstifle_history()
+		history_search_pos()
+		history_list()
+		history_tokenize() (Thank you, Tim Thomas)
+		history_arg_extract()
+		get_history_event()
+	- new sample/test programs
+		eg/fileman
+		t/history.t
+	- bug fix
+		dynamic loading works on Solaris2.x (define xfree() locally)
+		readline() calls add_history() only when MinLength > 0
+		Feature `addhistory' is renamed to `addHistory' since
+		Term/ReadLine.pm is fixed.
+		add NULL check for all sv_setpv()
+		remove arguments 'pos' from history_search()
+	- misc
+		change my E-mail address
 
 0.09  Mon Aug 25 00:33:29 1997
 	- add documentation about readline-2.1.tar.gz
