@@ -1,7 +1,7 @@
 #
 #	Gnu.pm --- The GNU Readline/History Library wrapper module
 #
-#	$Id: Gnu.pm,v 1.52 1998-04-15 22:00:03+09 hayashi Exp $
+#	$Id: Gnu.pm,v 1.55 1998-05-13 01:21:49+09 hayashi Exp $
 #
 #	Copyright (c) 1996,1997,1998 Hiroo Hayashi.  All rights reserved.
 #
@@ -54,7 +54,7 @@ use Carp;
     use DynaLoader;
     use vars qw($VERSION @ISA @EXPORT_OK);
 
-    $VERSION = '1.00';
+    $VERSION = '1.01';
 
     @ISA = qw(Term::ReadLine::Stub Term::ReadLine::Gnu::AU
 	      Exporter DynaLoader);
@@ -148,7 +148,9 @@ sub new {
     # ornaments on to be compatible with perl5.004_05(?)
     unless ($ENV{PERL_RL} and $ENV{PERL_RL} =~ /\bo\w*=0/) {
 	local $^W = 0;		# Term::ReadLine is not waring flag free
-	$self->ornaments(1);
+	# 'ue' (underline end) does not work on some terminal 
+	#$self->ornaments(1);
+	$self->ornaments('us,me,,,');
     }
 
     # initialize the GNU Readline Library first for sanity
@@ -419,6 +421,30 @@ sub rl_unbind_key ($;$) {
     }
 }
 
+sub rl_unbind_function_in_map ($;$) {
+    if ($Term::ReadLine::Gnu::Attribs{library_version} < 2.2) {
+	carp "rl_unbind_function_in_map() is not supported.  Ignored\n";
+	return;
+    }
+    if (defined $_[1]) {
+	return _rl_unbind_function_in_map($_[0], _str2map($_[1]));
+    } else {
+	return _rl_unbind_function_in_map($_[0]);
+    }
+}
+
+sub rl_unbind_command_in_map ($;$) {
+    if ($Term::ReadLine::Gnu::Attribs{library_version} < 2.2) {
+	carp "rl_unbind_command_in_map() is not supported.  Ignored\n";
+	return;
+    }
+    if (defined $_[1]) {
+	return _rl_unbind_command_in_map($_[0], _str2map($_[1]));
+    } else {
+	return _rl_unbind_command_in_map($_[0]);
+    }
+}
+
 sub rl_generic_bind ($$$;$) {
     if      ($_[0] == Term::ReadLine::Gnu::ISFUNC) {
 	if (defined $_[3]) {
@@ -465,6 +491,16 @@ sub rl_message {
     my $fmt = shift;
     my $line = sprintf($fmt, @_);
     _rl_message($line);
+}
+
+# _rl_save_prompt() and _rl_restore_prompt() are not documented
+# in the GNU Readline Library Manual Version 2.2.
+sub rl_save_prompt {
+    _rl_save_prompt();
+}
+
+sub rl_restore_prompt {
+    _rl_restore_prompt();
 }
 
 #
@@ -819,6 +855,16 @@ in C<MAP>.  Returns non-zero in case of error.
 	int	rl_unbind_key(int key, Keymap|str map = rl_get_keymap())
 
 Bind C<KEY> to the null function.  Returns non-zero in case of error.
+
+=item C<unbind_function_in_map(FUNCTION [,MAP])>
+
+	int	rl_unbind_function_in_map(FunctionPtr|str function,
+					  Keymap|str map = rl_get_keymap())
+
+=item C<unbind_command_in_map(COMMAND [,MAP])>
+
+	int	rl_unbind_command_in_map(str command,
+					 Keymap|str map = rl_get_keymap())
 
 =item C<generic_bind(TYPE, KEYSEQ, DATA, [,MAP])>
 
@@ -1350,7 +1396,7 @@ in Gnu.pm.  You can use it as follows;
     my $term = new Term::ReadLine 'sample';
     my $attribs = $term->Attribs;
     ...
-    $attribs->{rl_completion_entry_function} =
+    $attribs->{completion_entry_function} =
 	$attribs->{'list_completion_function'};
     ...
     $attribs->{completion_word} =
