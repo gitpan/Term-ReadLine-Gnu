@@ -1,6 +1,28 @@
 Revision history for Perl extension Term::ReadLine::Gnu.
 
+0.07  Wed Mar 19 02:26:06 1997
+
+	- interface to internal function and variables are changed.
+	  New interface is compatible with new Term::ReadLine.pm which
+	  is distributed with Perl 5.003_92 and later.  But it is not
+	  compatible with previous release.
+
+		- add method interface to all internal function
+		- add Attribs method to access internal variables
+		- EXPORT_OK contains only some constant definitions
+
+	- tkRunning support (new ReadLine.pm is required)
+	- add document
+	- bug fixes
+		- XS bugs correspond to callback interface
+		- fix _rl_store_function() and _rl_fetch_function()
+		- fix prototype of append_history
+		- use new _rl_store_rl_line_buffer() instead of
+		  reallocate rl_line_buffer.
+		- etc.
+
 0.06  Wed Feb  5 01:26:27 1997
+	- the first revision on CPAN
 	- support for non ANSI C compiler
 	- rename addhistory to AddHistory
 	- checked by gcc -Wall

@@ -1,7 +1,7 @@
 /*
  *	Gnu.xs --- GNU Readline wrapper module
  *
- *	$Id: Gnu.xs,v 1.47 1997-02-05 01:26:27+09 hayashi Exp $
+ *	$Id: Gnu.xs,v 1.52 1997-03-17 02:20:21+09 hayashi Exp $
  *
  *	Copyright (c) 1996,1997 Hiroo Hayashi.  All rights reserved.
  *
@@ -32,9 +32,11 @@ extern int rl_ignore_completion_duplicates;
 /* from GNU Readline:xmalloc.c */
 extern char *xmalloc (int);
 extern char *xfree (char *);
+void rl_extend_line_buffer (int);
 #else
 extern char *xmalloc ();
 extern char *xfree ();
+void rl_extend_line_buffer ();
 #endif /* __STDC__ */
 
 static char *
@@ -44,9 +46,12 @@ dupstr(s)			/* duplicate string */
   /*
    * Use xmalloc(), because allocated block will be freed in GNU
    * Readline Library routine.
-   * Don't make a macro.  Because 's' is evaluated twice.
+   * Don't make a macro, because the variable 's' is evaluated twice.
    */
-  return strcpy (xmalloc (strlen (s) + 1), s);
+  int len = strlen(s) + 1;
+  char *d = xmalloc(len);
+  Copy(s, d, len, char);	/* Is Copy() better than strcpy() in XS? */
+  return d;
 }
 
 /*
@@ -75,8 +80,8 @@ static struct str_vars {
   int accessed;
   int readonly;
 } str_tbl[] = {
-  /* When you change length of rl_line_buffer, change
-     rl_line_buffer_len also. */
+  /* When you change length of rl_line_buffer, you must call
+     rl_extend_line_buffer().  See _rl_store_rl_line_buffer() */
   { &rl_line_buffer,				0, 0 },	/* 0 */
   { &rl_prompt,					0, 1 },	/* 1 */
   { &rl_library_version,			0, 1 },	/* 2 */
@@ -248,7 +253,11 @@ completion_entry_function_wrapper(text, state)
   SAVETMPS;
 
   PUSHMARK(sp);
-  XPUSHs(sv_2mortal(newSVpv(text, 0)));
+  if (text) {
+    XPUSHs(sv_2mortal(newSVpv(text, 0)));
+  } else {
+    XPUSHs(&sv_undef);
+  }
   XPUSHs(sv_2mortal(newSViv(state)));
   PUTBACK;
 
@@ -286,7 +295,11 @@ attempted_completion_function_wrapper(text, start, end)
   SAVETMPS;
 
   PUSHMARK(sp);
-  XPUSHs(sv_2mortal(newSVpv(text, 0)));
+  if (text) {
+    XPUSHs(sv_2mortal(newSVpv(text, 0)));
+  } else {
+    XPUSHs(&sv_undef);
+  }
   XPUSHs(sv_2mortal(newSVpv(rl_line_buffer, 0)));
   XPUSHs(sv_2mortal(newSViv(start)));
   XPUSHs(sv_2mortal(newSViv(end)));
@@ -447,13 +460,21 @@ callback_handler_wrapper(line)
   dSP;
 
   PUSHMARK(sp);
-  XPUSHs(sv_2mortal(newSVpv(line, 0)));
+  if (line) {
+    XPUSHs(sv_2mortal(newSVpv(line, 0)));
+  } else {
+    XPUSHs(&sv_undef);
+  }
   PUTBACK;
 
   perl_call_sv(callback_handler_callback, G_DISCARD);
 }
 
-MODULE = Term::ReadLine::Gnu		PACKAGE = Term::ReadLine::Gnu
+/*
+ * make separate name space for low level XS functions and there methods
+ */
+
+MODULE = Term::ReadLine::Gnu		PACKAGE = Term::ReadLine::Gnu::XS
 
 ########################################################################
 #
@@ -891,7 +912,7 @@ rl_callback_handler_install(prompt, lhandler)
 	CODE:
 	{
 	  static char *cb_prompt = NULL;
-	  int len = strlen(prompt);
+	  int len = strlen(prompt) + 1;
 
 	  /* The value of prompt may be used after return from this routine. */
 	  if (cb_prompt)
@@ -1186,7 +1207,7 @@ int
 append_history(nelements, filename = NULL)
 	int nelements
 	char *filename
-	PROTOTYPE: ;$
+	PROTOTYPE: $;$
 
 int
 history_truncate_file(filename = NULL, nlines = 0)
@@ -1251,12 +1272,36 @@ _rl_store_str(pstr, id)
 	  }
 	  str_tbl[id].accessed = 1;
 
-	  len = strlen(pstr)+1;
+	  len = strlen(pstr) + 1;
 	  *str_tbl[id].var = xmalloc(len);
 	  Copy(pstr, *str_tbl[id].var, len, char);
 
 	  /* return variable value */
 	  sv_setpv(ST(0), *str_tbl[id].var);
+	}
+
+void
+_rl_store_rl_line_buffer(pstr)
+	const char *pstr
+	PROTOTYPE: $
+	CODE:
+	{
+	  size_t len;
+
+	  ST(0) = sv_newmortal();
+	  if (pstr) {
+	    len = strlen(pstr) + 1;
+
+	    /*
+	     * rl_extend_line_buffer() is not documented in the GNU
+	     * Readline Library Manual Edition 2.1.  But Chet Ramey
+	     * recommends me to use this function.
+	     */
+	    rl_extend_line_buffer(len);
+
+	    Copy(pstr, rl_line_buffer, len, char);
+	    sv_setpv(ST(0), rl_line_buffer);
+	  }
 	}
 
 void
@@ -1387,6 +1432,10 @@ _rl_store_function(fn, id)
 	PROTOTYPE: $$
 	CODE:
 	{
+	  /*
+	   * If "fn" is undef, default value of the GNU Readline
+	   * Library is set.
+	   */
 	  ST(0) = sv_newmortal();
 	  if (id < 0 || id >= sizeof(fn_tbl)/sizeof(struct fn_vars)) {
 	    warn("Gnu.xs:_rl_store_function: Illegal `id' value: `%d'", id);
@@ -1404,8 +1453,12 @@ _rl_store_function(fn, id)
 	      fn_tbl[id].callback = newSVsv(fn);
 	    }
 	    *(fn_tbl[id].rlfuncp) = fn_tbl[id].wrapper;
-	  } else
+	  } else {
+	    if (fn_tbl[id].callback) {
+	      SvSetSV(fn_tbl[id].callback, &sv_undef);
+	    }
 	    *(fn_tbl[id].rlfuncp) = fn_tbl[id].defaultfn;
+	  }
 
 	  /* return variable value */
 	  sv_setsv(ST(0), fn);
@@ -1421,6 +1474,6 @@ _rl_fetch_function(id)
 	  if (id < 0 || id >= sizeof(fn_tbl)/sizeof(struct fn_vars)) {
 	    warn("Gnu.xs:_rl_fetch_function: Illegal `id' value: `%d'", id);
 	    /* return undef */
-	  } else if (fn_tbl[id].rlfuncp)
+	  } else if (fn_tbl[id].callback && SvTRUE(fn_tbl[id].callback))
 	    sv_setsv(ST(0), fn_tbl[id].callback);
 	}
