@@ -1,9 +1,9 @@
 /*
  *	Gnu.xs --- GNU Readline wrapper module
  *
- *	$Id: Gnu.xs,v 1.108 2004-10-17 12:37:53-05 hiroo Exp $
+ *	$Id: Gnu.xs,v 1.110 2006-04-02 01:53:29+09 hiroo Exp $
  *
- *	Copyright (c) 2004 Hiroo Hayashi.  All rights reserved.
+ *	Copyright (c) 2006 Hiroo Hayashi.  All rights reserved.
  *
  *	This program is free software; you can redistribute it and/or
  *	modify it under the same terms as Perl itself.
@@ -43,7 +43,17 @@ extern "C" {
 #  endif
 #endif /* !__STDC__ */
 
-typedef char * t_xstr;		/* string which must be xfreeed */
+/*
+ * In Readline 4.2 many variables, function arguments, and function
+ * return values are now declared `const' where appropriate.
+ */
+#if (RL_READLINE_VERSION < 0x0402)
+#define CONST
+#else  /* (RL_READLINE_VERSION >= 0x0402) */
+#define CONST const
+#endif /* (RL_READLINE_VERSION >= 0x0402) */
+
+typedef char *	t_xstr;		/* string which must be xfreed */
 
 /*
  * compatibility definitions
@@ -52,11 +62,20 @@ typedef char * t_xstr;		/* string which must be xfreeed */
 /* rl_last_func() is defined in rlprivate.h */
 extern Function *rl_last_func;
 
+/* features introduced by GNU Readline 2.2 */
+#if (RL_READLINE_VERSION < 0x0202)
+static int rl_unbind_function_in_map(){ return 0; }
+static int rl_unbind_command_in_map(){ return 0; }
+#endif /* (RL_READLINE_VERSION < 0x0202) */
+
 /* features introduced by GNU Readline 4.0 */
 #if (RL_VERSION_MAJOR < 4)
 extern void rl_extend_line_buffer PARAMS((int));
 extern char **rl_funmap_names PARAMS((void));
+/* documented by Readline 4.2 but already implemented by 2.0. */
+extern int rl_add_funmap_entry PARAMS((CONST char *, Function *));
 
+/* dummy variable/function definition */
 static int rl_erase_empty_line = 0;
 static int rl_catch_signals = 1;
 static int rl_catch_sigwinch = 1;
@@ -65,12 +84,14 @@ static VFunction *rl_completion_display_matches_hook;
 static VFunction *rl_prep_term_function;
 static VFunction *rl_deprep_term_function;
 
-static void rl_cleanup_after_signal(){};
-static void rl_free_line_state(){};
-static void rl_reset_after_signal(){};
-static void rl_resize_terminal(){};
-static void rl_prep_terminal(){};
-static void rl_deprep_terminal(){};
+static void rl_cleanup_after_signal(){}
+static void rl_free_line_state(){}
+static void rl_reset_after_signal(){}
+static void rl_resize_terminal(){}
+static void rl_prep_terminal(){}
+static void rl_deprep_terminal(){}
+static int rl_execute_next(){ return 0; }
+static void rl_display_match_list(){}
 /*
  * Before GNU Readline Library Version 4.0, rl_save_prompt() was
  * _rl_save_prompt and rl_restore_prompt() was _rl_restore_prompt().
@@ -86,12 +107,19 @@ static void rl_restore_prompt() { _rl_restore_prompt(); }
 static int rl_already_prompted = 0;
 static int rl_num_chars_to_read = 0;
 static int rl_gnu_readline_p = 0;
+static int rl_on_new_line_with_prompt(){ return 0; }
 #endif /* (RL_READLINE_VERSION < 0x0401) */
 
 /* features introduced by GNU Readline 4.2 */
 #if (RL_READLINE_VERSION < 0x0402)
-/* Provide backwards-compatible entry points for old function names
-   which are rename from readline-4.2. */
+static int rl_set_prompt(){ return 0; }
+static int rl_clear_pending_input(){ return 0; }
+static int rl_set_keyboard_input_timeout(){ return 0; }
+static int rl_alphabetic(){ return 0; }
+static int rl_set_paren_blink_timeout(){ return 0; }
+static void rl_set_screen_size(int row, int col){}
+static void rl_get_screen_size(int *row, int *col){}
+
 typedef int rl_command_func_t PARAMS((int, int));
 typedef char *rl_compentry_func_t PARAMS((const char *, int));
 
@@ -102,6 +130,9 @@ static int rl_editing_mode = 0;
 static int rl_readline_state = 0;
 static Function *rl_directory_rewrite_hook = NULL;
 static char *history_word_delimiters = " \t\n;&()|<>";
+
+/* Provide backwards-compatible entry points for old function names
+   which are rename from readline-4.2. */
 static void
 rl_free_undo_list ()
 {
@@ -114,14 +145,14 @@ rl_crlf ()
   return crlf ();
 }
 
-#if (RL_VERSION_MAJOR >= 4)
 static void
 rl_tty_set_default_bindings (keymap)
 Keymap keymap;
 {
+#if (RL_VERSION_MAJOR >= 4)
   rltty_set_default_bindings (keymap);
-}
 #endif /* (RL_VERSION_MAJOR >= 4) */
+}
 
 static int
 rl_ding ()
@@ -152,14 +183,6 @@ rl_filename_completion_function (s, i)
 {
   return filename_completion_function ((char *)s, i);
 }
-
-/*
- * In Readline 4.2 many variables, function arguments, and function
- * return values are now declared `const' where appropriate.
- */
-#define CONST
-#else  /* (RL_READLINE_VERSION >= 0x0402) */
-#define CONST const
 #endif /* (RL_READLINE_VERSION >= 0x0402) */
 
 #if (RL_READLINE_VERSION < 0x0403)
@@ -170,6 +193,8 @@ extern char *rl_get_termcap PARAMS((const char *));
 /* features introduced by GNU Readline 4.3 */
 static int rl_completion_suppress_append = 0;
 static int rl_completion_mark_symlink_dirs = 0;
+static void rl_replace_line(){}
+static int rl_completion_mode(){ return 0; }
 #endif /* (RL_READLINE_VERSION < 0x0403) */
 
 #if (RL_VERSION_MAJOR < 5)
@@ -179,13 +204,36 @@ static int rl_completion_quote_character = 0;
 static int rl_completion_suppress_quote = 0;
 static int rl_completion_found_quote = 0;
 static Function *rl_completion_word_break_hook = NULL;
+static int rl_bind_key_if_unbound_in_map(){ return 0; }
+static int rl_bind_keyseq_in_map(){ return 0; }
+static int rl_bind_keyseq_if_unbound_in_map(){ return 0; }
+static void rl_tty_unset_default_bindings(){}
+static void add_history_time(){}
+static time_t history_get_time(){ return 0; }
 #endif /* (RL_VERSION_MAJOR < 5) */
+
+#if (RL_READLINE_VERSION < 0x0501)
+/* features introduced by GNU Readline 5.1 */
+static int rl_prefer_env_winsize = 0;
+static char *rl_variable_value(CONST char * v){ return NULL; }
+static void rl_reset_screen_size(){}
+
+#endif /* (RL_READLINE_VERSION < 0x0501) */
 
 /*
  * utility/dummy functions
  */                                                                                
+/* from GNU Readline:xmalloc.h */
+#ifndef PTR_T
+#ifdef __STDC__
+#  define PTR_T void *
+#else
+#  define PTR_T char *
+#endif
+#endif /* !PTR_T */
+
 /* from GNU Readline:xmalloc.c */
-extern char *xmalloc PARAMS((int));
+extern PTR_T xmalloc PARAMS((int));
 extern char *tgetstr PARAMS((const char *, char **));
 extern int tputs PARAMS((const char *, int, int (*)(int)));
 
@@ -198,12 +246,12 @@ extern int tputs PARAMS((const char *, int, int (*)(int)));
  */
 #ifdef OS2_USEDLL
 /* from GNU Readline:xmalloc.c */
-extern char *xfree PARAMS((char *));
+extern PTR_T xfree PARAMS((PTR_T));
 
 #else /* not OS2_USEDLL */
 static void
 xfree (string)
-     char *string;
+     PTR_T string;
 {
   if (string)
     free (string);
@@ -212,7 +260,7 @@ xfree (string)
 
 static char *
 dupstr(s)			/* duplicate string */
-     char *s;
+     CONST char * s;
 {
   /*
    * Use xmalloc(), because allocated block will be freed in the GNU
@@ -258,7 +306,7 @@ rl_get_function_name (function)
 /*
  * from readline-4.0:complete.c
  * Redefine here since the function defined as static in complete.c.
- * This function is used for default vaule for rl_filename_quoting_function.
+ * This function is used for default value for rl_filename_quoting_function.
  */
 static char * rl_quote_filename PARAMS((char *s, int rtype, char *qcp));
 
@@ -361,7 +409,8 @@ static struct int_vars {
   { &rl_completion_quote_character,		0, 0 },	/* 34 */
   { &rl_completion_suppress_quote,		0, 0 },	/* 35 */
   { &rl_completion_found_quote,			0, 0 },	/* 36 */
-  { &rl_completion_mark_symlink_dirs,		0, 0 }	/* 37 */
+  { &rl_completion_mark_symlink_dirs,		0, 0 },	/* 37 */
+  { &rl_prefer_env_winsize,			0, 0 }	/* 38 */
 };
 
 /*
@@ -1254,7 +1303,7 @@ callback_handler_wrapper(line)
 }
 
 /*
- * make separate name space for low level XS functions and there methods
+ * make separate name space for low level XS functions and their methods
  */
 
 MODULE = Term::ReadLine::Gnu		PACKAGE = Term::ReadLine::Gnu::XS
@@ -1287,7 +1336,7 @@ rl_readline(prompt = NULL)
  #
 rl_command_func_t *
 rl_add_defun(name, fn, key = -1)
-	const char *	name
+	CONST char *	name
 	SV *		fn
 	int key
     PROTOTYPE: $$;$
@@ -1385,7 +1434,6 @@ _rl_bind_key(key, function, map = rl_get_keymap())
     OUTPUT:
 	RETVAL
 
-#if (RL_VERSION_MAJOR >= 5)
 int
 _rl_bind_key_if_unbound(key, function, map = rl_get_keymap())
 	int key
@@ -1397,8 +1445,6 @@ _rl_bind_key_if_unbound(key, function, map = rl_get_keymap())
     OUTPUT:
 	RETVAL
 
-#endif /* (RL_VERSION_MAJOR >= 5) */
-
 int
 _rl_unbind_key(key, map = rl_get_keymap())
 	int key
@@ -1408,8 +1454,6 @@ _rl_unbind_key(key, map = rl_get_keymap())
 	RETVAL = rl_unbind_key_in_map(key, map);
     OUTPUT:
 	RETVAL
-
-#if (RL_READLINE_VERSION >= 0x0202)
 
  # rl_unbind_function_in_map() and rl_unbind_command_in_map() are introduced
  # by readline-2.2.
@@ -1434,9 +1478,6 @@ _rl_unbind_command(command, map = rl_get_keymap())
     OUTPUT:
 	RETVAL
 
-#endif /* (RL_READLINE_VERSION >= 0x0202) */
-
-#if (RL_VERSION_MAJOR >= 5)
 int
 _rl_bind_keyseq(keyseq, function, map = rl_get_keymap())
 	const char *keyseq
@@ -1448,25 +1489,23 @@ _rl_bind_keyseq(keyseq, function, map = rl_get_keymap())
     OUTPUT:
 	RETVAL
 
-#endif /* (RL_VERSION_MAJOR >= 5) */
-
-#if (RL_READLINE_VERSION >= 0x0402)
  # rl_set_key() is introduced by readline-4.2 and equivalent with
  # rl_generic_bind(ISFUNC, keyseq, (char *)function, map).
 int
 _rl_set_key(keyseq, function, map = rl_get_keymap())
-	const char *	keyseq
+	CONST char *	keyseq
 	rl_command_func_t *	function
 	Keymap map
     PROTOTYPE: $$;$
     CODE:
+#if (RL_READLINE_VERSION >= 0x0402)
 	RETVAL = rl_set_key(keyseq, function, map);
+#else
+	RETVAL = rl_generic_bind(ISFUNC, keyseq, (char *)function, map);
+#endif
     OUTPUT:
 	RETVAL
 
-#endif /* (RL_READLINE_VERSION >= 0x0402) */
-
-#if (RL_VERSION_MAJOR >= 5)
 int
 _rl_bind_keyseq_if_unbound(keyseq, function, map = rl_get_keymap())
 	const char *keyseq
@@ -1477,8 +1516,6 @@ _rl_bind_keyseq_if_unbound(keyseq, function, map = rl_get_keymap())
 	RETVAL = rl_bind_keyseq_if_unbound_in_map(keyseq, function, map);
     OUTPUT:
 	RETVAL
-
-#endif /* (RL_VERSION_MAJOR >= 5) */
 
 int
 _rl_generic_bind_function(keyseq, function, map = rl_get_keymap())
@@ -1671,19 +1708,15 @@ rl_funmap_names()
 	  }
 	}
 
-#if (RL_READLINE_VERSION >= 0x0402)
- # rl_add_funmap_entry() is introduced by readline-4.2.
 int
 _rl_add_funmap_entry(name, function)
-	const char *		name
+	CONST char *		name
 	rl_command_func_t *	function
     PROTOTYPE: $$
     CODE:
 	RETVAL = rl_add_funmap_entry(name, function);
     OUTPUT:
 	RETVAL
-
-#endif /* (RL_READLINE_VERSION >= 0x0402) */
 
  #
  #	2.4.5 Allowing Undoing
@@ -1736,12 +1769,9 @@ int
 rl_on_new_line()
     PROTOTYPE:
 
-#if (RL_READLINE_VERSION >= 0x0401)
 int
 rl_on_new_line_with_prompt()
     PROTOTYPE:
-
-#endif /* (RL_READLINE_VERSION >= 0x0401) */
 
 int
 rl_reset_line_state()
@@ -1782,13 +1812,9 @@ rl_expand_prompt(prompt)
 	# should be defined as 'const char *'
 	char *		prompt
 
-#if (RL_READLINE_VERSION >= 0x0402)
-
 int
 rl_set_prompt(prompt)
 	const char *	prompt
-
-#endif /* (RL_READLINE_VERSION >= 0x0402) */
 
  #
  #	2.4.7 Modifying Text
@@ -1821,7 +1847,7 @@ rl_kill_text(start = 0, end = rl_end)
 
 void
 rl_push_macro_input(macro)
-	const char *	macro
+	CONST char *	macro
     PROTOTYPE: $
     CODE:
 	rl_push_macro_input(dupstr(macro));
@@ -1843,15 +1869,10 @@ rl_stuff_char(c)
 	int c
     PROTOTYPE: $
 
-#if (RL_VERSION_MAJOR >= 4)
-
 int
 rl_execute_next(c)
 	int c
     PROTOTYPE: $
-
-#endif /* (RL_VERSION_MAJOR >= 4) */
-#if (RL_READLINE_VERSION >= 0x0402)
 
 int
 rl_clear_pending_input()
@@ -1862,13 +1883,9 @@ rl_set_keyboard_input_timeout(usec)
 	int usec
     PROTOTYPE: $
 
-#endif /* (RL_READLINE_VERSION >= 0x0402) */
-
  #
  #	2.4.9 Terminal Management
  #
-
-#if (RL_VERSION_MAJOR >= 4)
 
 void
 rl_prep_terminal(meta_flag)
@@ -1886,17 +1903,12 @@ _rl_tty_set_default_bindings(kmap = rl_get_keymap())
     CODE:
 	rl_tty_set_default_bindings(kmap);
 
-#endif /* (RL_VERSION_MAJOR >= 4) */
-
-#if (RL_VERSION_MAJOR >= 5)
 void
 _rl_tty_unset_default_bindings(kmap = rl_get_keymap())
 	Keymap kmap
     PROTOTYPE: ;$
     CODE:
 	rl_tty_unset_default_bindings(kmap);
-
-#endif /* (RL_VERSION_MAJOR >= 5) */
 
 int
 rl_reset_terminal(terminal_name = NULL)
@@ -1906,14 +1918,11 @@ rl_reset_terminal(terminal_name = NULL)
  #
  #	2.4.10 Utility Functions
  #
-#if (RL_READLINE_VERSION >= 0x0403)
 void
 rl_replace_line(text, clear_undo = 0)
 	const char *text
 	int clear_undo
     PROTOTYPE: $$
-
-#endif /* (RL_READLINE_VERSION >= 0x0403) */
 
 int
 rl_initialize()
@@ -1923,16 +1932,10 @@ int
 rl_ding()
     PROTOTYPE:
 
-#if (RL_READLINE_VERSION >= 0x0402)
-
 int
 rl_alphabetic(c)
 	int c
     PROTOTYPE: $
-
-#endif /* (RL_READLINE_VERSION >= 0x0402) */
-
-#if (RL_VERSION_MAJOR >= 4)
 
 void
 rl_display_match_list(pmatches, plen = -1, pmax = -1)
@@ -1977,8 +1980,6 @@ rl_display_match_list(pmatches, plen = -1, pmax = -1)
 	  xfree(matches);
 	}
 
-#endif /* (RL_VERSION_MAJOR >= 4) */
-
  #
  #	2.4.11 Miscellaneous Functions
  #
@@ -2018,19 +2019,21 @@ rl_variable_bind(name, value)
  # rl_variable_dumper is documented by Readline 4.2,
  # but have been implemented for 2.2.1.
 
+ # Do not free the string returned.
+char *
+rl_variable_value(variable)
+	CONST char *	variable
+    PROTOTYPE: $
+
 void
 rl_variable_dumper(readable = 0)
 	int readable
     PROTOTYPE: ;$
 
-#if (RL_READLINE_VERSION >= 0x0402)
-
 int
 rl_set_paren_blink_timeout(usec)
 	int usec
     PROTOTYPE: $
-
-#endif /* (RL_READLINE_VERSION >= 0x0402) */
 
  # rl_get_termcap() is documented by readline-4.2 but it has been implemented 
  # from 2.2.1.
@@ -2103,8 +2106,6 @@ void
 rl_resize_terminal()
     PROTOTYPE:
 
-#if (RL_READLINE_VERSION >= 0x0402)
-
 void
 rl_set_screen_size(rows, cols)
 	int rows
@@ -2123,7 +2124,9 @@ rl_get_screen_size()
 	  PUSHs(sv_2mortal(newSViv(cols)));
 	}
 
-#endif /* (RL_READLINE_VERSION >= 0x0402) */
+void
+rl_reset_screen_size()
+    PROTOTYPE:
 
 int
 rl_set_signals()
@@ -2142,7 +2145,6 @@ rl_complete_internal(what_to_do = TAB)
 	int what_to_do
     PROTOTYPE: ;$
 
-#if (RL_READLINE_VERSION >= 0x0403)
 int
 _rl_completion_mode(function)
 	rl_command_func_t *	function
@@ -2152,11 +2154,9 @@ _rl_completion_mode(function)
     OUTPUT:
 	RETVAL
 
-#endif /* (RL_READLINE_VERSION >= 0x0403) */
-
 void
 rl_completion_matches(text, fn = NULL)
-	const char *	text
+	CONST char *	text
 	SV *		fn
     PROTOTYPE: $;$
     PPCODE:
@@ -2256,13 +2256,10 @@ add_history(string)
 	CONST char *	string
     PROTOTYPE: $
 
-#if (RL_VERSION_MAJOR >= 5)
 void
 add_history_time(string)
 	CONST char *	string
     PROTOTYPE: $
-
-#endif /* (RL_VERSION_MAJOR >= 5) */
 
 HIST_ENTRY *
 remove_history(which)
@@ -2352,7 +2349,6 @@ history_get(offset)
 	int offset
     PROTOTYPE: $
 
-#if (RL_VERSION_MAJOR >= 5)
  # To keep compatibility, I cannot make a function whose argument
  # is "HIST_ENTRY *".
 time_t
@@ -2369,8 +2365,6 @@ history_get_time(offset)
 	}
     OUTPUT:
 	RETVAL
-
-#endif /* (RL_VERSION_MAJOR >= 5) */
 
 int
 history_total_bytes()
