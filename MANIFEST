@@ -1,7 +1,6 @@
 Gnu.pm		The GNU Readline extension Perl module
 Gnu.xs		The GNU Readline extension external subroutines
 Gnu/XS.pm
-Gnu/euc_jp.pm
 INSTALL		Installtion instructions
 MANIFEST	This list of files
 Makefile.PL	The GNU Readline extension makefile writer
@@ -22,4 +21,3 @@ t/history.t	a test script for the GNU History Library function
 t/inputrc	A file for t/readline.t
 t/readline.t	a test script for the GNU Readline extension
 typemap		The GNU Readline extension interface types
-META.yml                                 Module meta-data (added by MakeMaker)
