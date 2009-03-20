@@ -1,7 +1,7 @@
 #
 #	Gnu.pm --- The GNU Readline/History Library wrapper module
 #
-#	$Id: Gnu.pm,v 1.98 2009/02/27 12:46:45 hiroo Exp $
+#	$Id: Gnu.pm,v 1.100 2009/03/20 16:33:25 hiroo Exp $
 #
 #	Copyright (c) 2009 Hiroo Hayashi.  All rights reserved.
 #
@@ -73,7 +73,7 @@ END
     use DynaLoader;
     use vars qw($VERSION @ISA @EXPORT_OK);
 
-    $VERSION = '1.18';
+    $VERSION = '1.19';
 
     # Term::ReadLine::Gnu::AU makes a function in
     # `Term::ReadLine::Gnu::XS' as a method.
@@ -291,6 +291,11 @@ $Term::ReadLine::registered = $Term::ReadLine::registered;
 sub readline {			# should be ReadLine
     my $self = shift;
     my ($prompt, $preput) = @_;
+
+    # contributed fix for Perl debugger
+    # make sure the outstream fd inside the readline library is
+    # in sync (see http://bugs.debian.org/236018)
+    $Attribs{outstream} = $Attribs{outstream};
 
     # ornament support (now prompt only)
     $prompt = ${$Attribs{term_set}}[0] . $prompt . ${$Attribs{term_set}}[1];
