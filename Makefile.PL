@@ -1,9 +1,9 @@
 #
 #	Makefile.PL for Term::ReadLine::Gnu
 #
-#	$Id: Makefile.PL,v 1.32 2009-03-01 11:57:15+09 hiroo Exp $
+#	$Id: Makefile.PL 448 2014-03-01 16:51:05Z hayashi $
 #
-#	Copyright (c) 2009 Hiroo Hayashi.  All rights reserved.
+#	Copyright (c) 2014 Hiroo Hayashi.  All rights reserved.
 #		<hiroo.hayashi@computer.org>
 #
 #	This program is free software; you can redistribute it and/or
@@ -77,7 +77,7 @@ if ($Config{osname} eq 'os2') {
     #$lddflags = ($Config{osname} =~ /cygwin/i) ? '-static' : '';
 }
 
-# Check version of  GNU Readline Library (for version 4.2 and before)
+# Check version of GNU Readline Library (for version 4.2 and before)
 {
     my ($rlmajorver, $rlminorver) =
 	check_readline_version($RLINC, $RLLIB, $defs, $lddflags, $libs);
@@ -88,6 +88,14 @@ if ($Config{osname} eq 'os2') {
 	$defs .= " -DRL_VERSION_MAJOR=$rlmajorver";
 	$defs .= " -DRL_VERSION_MINOR=$rlminorver";
     }
+    # to show GNU Readline Library version in CPAN Tester Reports
+    $defs .= " -DTRG_READLINE_VERSION=" .
+	sprintf("0x%02x%02x", $rlmajorver, $rlminorver);
+}
+
+# Check whether xmalloc has been renamed to _rl_malloc (Gentoo Linux)
+if (my $extra_defs = guess_malloc_names($RLINC, $RLLIB, $defs, $lddflags, $libs)) {
+    $defs .= " $extra_defs";
 }
 
 # generate a Makefile
@@ -105,7 +113,7 @@ WriteMakefile
       ) : () ),
      INC	  => $RLINC,
      dist	  => { COMPRESS => 'gzip -9f', SUFFIX => 'gz' },
-     clean	  => { FILES => "rlver.c rlver$Config{_exe}" },
+     clean	  => { FILES => "rlver.c rlver$Config{_exe} rlmalloc.c rlmalloc$Config{_exe}" },
 );
 
 if ($Config{usesfio} eq 'true') {
@@ -213,5 +221,79 @@ EOM
     print "It seems that you have the GNU Readline Library version $rlver.\n";
     # $rlver may be '8.21-beta3' or '4.2a'
     return $rlver =~ /(\d+)\.(\d+)/;
+}
+
+########################################################################
+# Check whether the xmalloc exported by readline is indeed called
+# 'xmalloc' or whether it has been renamed to '_rl_malloc'.
+# Contributed by KENTNL at cpan.org
+# https://rt.cpan.org/Ticket/Display.html?id=65973
+sub guess_malloc_names {
+    my ($RLINC, $RLLIB, $defs, $lddflags, $libs) = @_;
+    my $frlmalloc = 'rlmalloc.c';
+
+    my @symbol_sets = (
+	{
+	    # try defaults first
+	    # xmalloc  => 'xmalloc',
+	    # xrealloc => 'xrealloc',
+	    # xfree    => 'xfree',
+	},
+	{
+	    xmalloc  => '_rl_malloc',
+	    xrealloc => '_rl_realloc',
+	    xfree    => '_rl_free',
+	},
+    );
+
+    # make temp file
+    open(my $F, ">", $frlmalloc) || die "Cannot open $frlmalloc: $!\n";
+    print {$F} <<'EOF';
+/* used by Makefile.pl to check the names of xmalloc etc. of the GNU Readline Library */
+#include <stdio.h>
+#include <readline/readline.h>
+
+/* we assume support for ANSI C */
+extern void *xmalloc(int);
+extern void *xrealloc(void *, int);
+extern void xfree(void *);
+
+int main() {
+    char *p;
+    p = xmalloc(1);
+    p[0] = 'o';
+    p = xrealloc(p, 3);
+    p[1] = 'k';
+    p[2] = '\0';
+    puts(p);
+    xfree(p);
+    return 0;
+}
+EOF
+    close($F);
+
+    my $extra_defs;
+    for my $symbol_set (@symbol_sets) {
+	my $xdef = join " ", map "-D$_=$symbol_set->{$_}", sort keys %$symbol_set;
+	# compile it
+	my $comp_cmd = "$Config{cc} $RLINC $Config{ccflags} $defs $xdef $frlmalloc -o rlmalloc $RLLIB $lddflags $Config{ldflags} $libs";
+	print $comp_cmd, "\n";
+	system($comp_cmd);
+	unless (system($comp_cmd) || `./rlmalloc` !~ /^ok$/ || $?) {
+	    $extra_defs = $xdef;
+	    last;
+	}
+    }
+
+    unless (defined $extra_defs) {
+	warn <<EOM;
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+I was unable to find a working xmalloc in your readline library.
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+EOM
+	exit $err;
+    }
+
+    return $extra_defs;
 }
 # End of Makefile.PL

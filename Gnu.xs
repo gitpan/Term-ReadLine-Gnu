@@ -1,9 +1,9 @@
 /*
  *	Gnu.xs --- GNU Readline wrapper module
  *
- *	$Id: Gnu.xs,v 1.114 2010/05/02 10:34:41 hiroo Exp $
+ *	$Id: Gnu.xs 446 2014-03-01 16:17:57Z hayashi $
  *
- *	Copyright (c) 2010 Hiroo Hayashi.  All rights reserved.
+ *	Copyright (c) 2014 Hiroo Hayashi.  All rights reserved.
  *
  *	This program is free software; you can redistribute it and/or
  *	modify it under the same terms as Perl itself.
@@ -58,40 +58,104 @@ typedef char *	t_xstr;		/* string which must be xfreed */
 /*
  * compatibility definitions
  */
+#if (RL_READLINE_VERSION < 0x0402)
+typedef int rl_command_func_t PARAMS((int, int));
+typedef char *rl_compentry_func_t PARAMS((const char *, int));
+typedef char **rl_completion_func_t PARAMS((const char *, int, int));
+typedef char *rl_quote_func_t PARAMS((char *, int, char *));
+typedef char *rl_dequote_func_t PARAMS((char *, int));
+typedef int rl_compignore_func_t PARAMS((char **));
+typedef void rl_compdisp_func_t PARAMS((char **, int, int));
+typedef int rl_hook_func_t PARAMS((void));
+typedef int rl_getc_func_t PARAMS((FILE *));
+typedef int rl_linebuf_func_t PARAMS((char *, int));
+
+/* `Generic' function pointer typedefs */
+typedef int rl_intfunc_t PARAMS((int));
+#define rl_ivoidfunc_t rl_hook_func_t
+typedef int rl_icpfunc_t PARAMS((char *));
+typedef int rl_icppfunc_t PARAMS((char **));
+
+typedef void rl_voidfunc_t PARAMS((void));
+typedef void rl_vintfunc_t PARAMS((int));
+typedef void rl_vcpfunc_t PARAMS((char *));
+typedef void rl_vcppfunc_t PARAMS((char **));
 
 /* rl_last_func() is defined in rlprivate.h */
 extern Function *rl_last_func;
+#endif /* (RL_READLINE_VERSION < 0x0402) */
 
-/* features introduced by GNU Readline 2.2 */
-#if (RL_READLINE_VERSION < 0x0202)
-static int rl_unbind_function_in_map(){ return 0; }
-static int rl_unbind_command_in_map(){ return 0; }
-#endif /* (RL_READLINE_VERSION < 0x0202) */
+#if (RL_READLINE_VERSION >= 0x0603)
+/* obsoleted by Readline 6.3 */
+typedef int Function ();
+typedef void VFunction ();
+typedef char *CPFunction ();
+typedef char **CPPFunction ();
+#endif /* (RL_READLINE_VERSION >= 0x0603) */
 
-/* features introduced by GNU Readline 4.0 */
-#if (RL_VERSION_MAJOR < 4)
-extern void rl_extend_line_buffer PARAMS((int));
-extern char **rl_funmap_names PARAMS((void));
-/* documented by Readline 4.2 but already implemented by 2.0. */
-extern int rl_add_funmap_entry PARAMS((CONST char *, Function *));
-
-/* dummy variable/function definition */
-static int rl_erase_empty_line = 0;
-static int rl_catch_signals = 1;
-static int rl_catch_sigwinch = 1;
-static Function *rl_pre_input_hook;
-static VFunction *rl_completion_display_matches_hook;
+#if (RL_READLINE_VERSION < 0x0201)
+/* features introduced by GNU Readline 2.1 */
 static VFunction *rl_prep_term_function;
 static VFunction *rl_deprep_term_function;
+#endif /* (RL_READLINE_VERSION < 0x0201) */
 
+#if (RL_READLINE_VERSION < 0x0202)
+/* features introduced by GNU Readline 2.2 */
+static int
+rl_unbind_function_in_map (func, map)
+     rl_command_func_t *func;
+     Keymap map;
+{
+  register int i, rval;
+
+  for (i = rval = 0; i < KEYMAP_SIZE; i++)
+    {
+      if (map[i].type == ISFUNC && map[i].function == func)
+	{
+	  map[i].function = (rl_command_func_t *)NULL;
+	  rval = 1;
+	}
+    }
+  return rval;
+}
+
+static int
+rl_unbind_command_in_map (command, map)
+     const char *command;
+     Keymap map;
+{
+  rl_command_func_t *func;
+
+  func = rl_named_function (command);
+  if (func == 0)
+    return 0;
+  return (rl_unbind_function_in_map (func, map));
+}
+#endif /* (RL_READLINE_VERSION < 0x0202) */
+
+#if (RL_VERSION_MAJOR < 4)
+/* documented by Readline 4.0 but already implemented since 2.0 or 2.1. */
+extern void rl_extend_line_buffer PARAMS((int));
+extern char **rl_funmap_names PARAMS((void));
+extern int rl_add_funmap_entry PARAMS((CONST char *, Function *));
+extern void rl_prep_terminal PARAMS((int));
+extern void rl_deprep_terminal PARAMS((void));
+extern int rl_execute_next PARAMS((int));
+
+/* features introduced by GNU Readline 4.0 */
+/* dummy variable/function definition */
+static int rl_erase_empty_line = 0;
+static Function *rl_pre_input_hook;
+static int rl_catch_signals = 1;
+static int rl_catch_sigwinch = 1;
+static VFunction *rl_completion_display_matches_hook;
+
+static void rl_display_match_list(){}
 static void rl_cleanup_after_signal(){}
 static void rl_free_line_state(){}
 static void rl_reset_after_signal(){}
 static void rl_resize_terminal(){}
-static void rl_prep_terminal(){}
-static void rl_deprep_terminal(){}
-static int rl_execute_next(){ return 0; }
-static void rl_display_match_list(){}
+
 /*
  * Before GNU Readline Library Version 4.0, rl_save_prompt() was
  * _rl_save_prompt and rl_restore_prompt() was _rl_restore_prompt().
@@ -102,16 +166,21 @@ static void rl_save_prompt() { _rl_save_prompt(); }
 static void rl_restore_prompt() { _rl_restore_prompt(); }
 #endif /* (RL_VERSION_MAJOR < 4) */
 
-/* features introduced by GNU Readline 4.1 */
 #if (RL_READLINE_VERSION < 0x0401)
+/* features introduced by GNU Readline 4.1 */
 static int rl_already_prompted = 0;
 static int rl_num_chars_to_read = 0;
-static int rl_gnu_readline_p = 0;
+static int rl_gnu_readline_p = 1;
 static int rl_on_new_line_with_prompt(){ return 0; }
 #endif /* (RL_READLINE_VERSION < 0x0401) */
 
-/* features introduced by GNU Readline 4.2 */
 #if (RL_READLINE_VERSION < 0x0402)
+/* documented by 4.2 but implemented since 2.1 */
+extern int rl_explicit_arg;
+extern int rl_numeric_arg;
+extern int rl_editing_mode;
+
+/* features introduced by GNU Readline 4.2 */
 static int rl_set_prompt(){ return 0; }
 static int rl_clear_pending_input(){ return 0; }
 static int rl_set_keyboard_input_timeout(){ return 0; }
@@ -120,16 +189,16 @@ static int rl_set_paren_blink_timeout(){ return 0; }
 static void rl_set_screen_size(int row, int col){}
 static void rl_get_screen_size(int *row, int *col){}
 
-typedef int rl_command_func_t PARAMS((int, int));
-typedef char *rl_compentry_func_t PARAMS((const char *, int));
-
-static char *rl_executing_macro = NULL;
-static int rl_explicit_arg = 0;
-static int rl_numeric_arg = 0;
-static int rl_editing_mode = 0;
-static int rl_readline_state = 0;
+static char *rl_executing_macro = NULL; /* was _rl_executing_macro */
+static int rl_readline_state = 2; /* RL_STATE_INITIALIZED */
 static Function *rl_directory_rewrite_hook = NULL;
 static char *history_word_delimiters = " \t\n;&()|<>";
+
+/* documented by 4.2a but implemented since 2.1 */
+extern char *rl_get_termcap PARAMS((const char *));
+
+/* features introduced by GNU Readline 4.2a */
+static int rl_readline_version = RL_READLINE_VERSION;
 
 /* Provide backwards-compatible entry points for old function names
    which are rename from readline-4.2. */
@@ -186,10 +255,6 @@ rl_filename_completion_function (s, i)
 #endif /* (RL_READLINE_VERSION >= 0x0402) */
 
 #if (RL_READLINE_VERSION < 0x0403)
-/* features introduced by GNU Readline 4.2a */
-static int rl_readline_version = RL_READLINE_VERSION;
-extern char *rl_get_termcap PARAMS((const char *));
-
 /* features introduced by GNU Readline 4.3 */
 static int rl_completion_suppress_append = 0;
 static int rl_completion_mark_symlink_dirs = 0;
@@ -199,11 +264,11 @@ static int rl_completion_mode(){ return 0; }
 
 #if (RL_VERSION_MAJOR < 5)
 /* features introduced by GNU Readline 5.0 */
-static int history_write_timestamps = 0;
+static Function *rl_completion_word_break_hook = NULL;
 static int rl_completion_quote_character = 0;
 static int rl_completion_suppress_quote = 0;
 static int rl_completion_found_quote = 0;
-static Function *rl_completion_word_break_hook = NULL;
+static int history_write_timestamps = 0;
 static int rl_bind_key_if_unbound_in_map(){ return 0; }
 static int rl_bind_keyseq_in_map(){ return 0; }
 static int rl_bind_keyseq_if_unbound_in_map(){ return 0; }
@@ -217,35 +282,63 @@ static time_t history_get_time(){ return 0; }
 static int rl_prefer_env_winsize = 0;
 static char *rl_variable_value(CONST char * v){ return NULL; }
 static void rl_reset_screen_size(){}
-
 #endif /* (RL_READLINE_VERSION < 0x0501) */
 
 #if (RL_VERSION_MAJOR < 6)
+/* documented by 6.0 but implemented since 2.1 */
+extern char *rl_display_prompt;
 /* features introduced by GNU Readline 6.0 */
-static char *rl_display_prompt = NULL;
-static int rl_sort_completion_matches = 0;
+static int rl_sort_completion_matches = 1;
 static int rl_completion_invoking_key = 0;
 /*
   NOT IMPLEMENTED YET !!!FIXIT!!!
+  documented by 6.0 but implemented since 4.3
 static int rl_save_state(struct readline_state *sp){ return 0; }
 static int rl_restore_state(struct readline_state *sp){ return 0; }
  */
 static void rl_echo_signal_char(int sig){}
 #endif /* (RL_VERSION_MAJOR < 6) */
 
-#if 0 /* comment out until GNU Readline 6.2 will be released. */
 #if (RL_READLINE_VERSION < 0x0601)
 /* features introduced by GNU Readline 6.1 */
+static rl_dequote_func_t *rl_filename_rewrite_hook;
+
 /* Convenience function that discards, then frees, MAP. */
-void
+static void xfree(void *);
+static void
 rl_free_keymap (map)
      Keymap map;
 {
   rl_discard_keymap (map);
-  free ((char *)map);
+  xfree ((char *)map);
 }
 #endif /* (RL_READLINE_VERSION < 0x0601) */
+
+/* No feature to be handled by this module is introduced by GNU Readline 6.2 */
+
+#if (RL_READLINE_VERSION < 0x0603)
+/* documented by 6.3 but implemented since 2.1 */
+extern int rl_key_sequence_length;
+#if (RL_READLINE_VERSION > 0x0600)
+/* externed by 6.3 but implemented since 6.1 */
+extern void rl_free_keymap PARAMS((Keymap));
 #endif
+/* features introduced by GNU Readline 6.3 */
+static rl_hook_func_t *rl_signal_event_hook = NULL;
+static rl_hook_func_t *rl_input_available_hook = NULL;
+static int rl_executing_key = 0;
+static char *rl_executing_keyseq = NULL;
+static int rl_change_environment = 1;
+static rl_icppfunc_t *rl_filename_stat_hook = NULL;
+
+void rl_clear_history (void) {}
+/*
+  NOT IMPLEMENTED YET !!!FIXIT!!!
+  documented by 6.3 but implemented since 2.1
+static HISTORY_STATE	*history_get_hitory_state();
+static void	*history_set_hitory_state(HISTORY_STATE *state)
+ */
+#endif /* (RL_READLINE_VERSION < 0x0603) */
 
 /*
  * utility/dummy functions
@@ -271,11 +364,6 @@ extern int tputs PARAMS((const char *, int, int (*)(int)));
  * I choose this as default since some other OSs may have same problem.
  * usemymalloc=n is required.
  */
-#ifdef OS2_USEDLL
-/* from GNU Readline:xmalloc.c */
-extern PTR_T xfree PARAMS((PTR_T));
-
-#else /* not OS2_USEDLL */
 static void
 xfree (string)
      PTR_T string;
@@ -283,7 +371,6 @@ xfree (string)
   if (string)
     free (string);
 }
-#endif /* not OS2_USEDLL */
 
 static char *
 dupstr(s)			/* duplicate string */
@@ -380,9 +467,10 @@ static struct str_vars {
   { &history_no_expand_chars,				0, 0 },	/* 11 */
   { &history_search_delimiter_chars,			0, 0 },	/* 12 */
 
-  { &rl_executing_macro,				0, 0 },	/* 13 */
+  { &rl_executing_macro,				0, 1 },	/* 13 */
   { &history_word_delimiters,				0, 0 },	/* 14 */
-  { &rl_display_prompt,					0, 0 }	/* 15 */
+  { &rl_display_prompt,					0, 0 },	/* 15 */
+  { &rl_executing_keyseq,				0, 1 }	/* 16 */
 };
 
 /*
@@ -408,7 +496,7 @@ static struct int_vars {
   { &rl_inhibit_completion,			0, 0 },	/* 10 */
 
   { &history_base,				0, 0 },	/* 11 */
-  { &history_length,				0, 0 },	/* 12 */
+  { &history_length,				0, 1 },	/* 12 */
 #if (RL_READLINE_VERSION >= 0x0402)
   { &history_max_entries,			0, 1 },	/* 13 */
 #else /* (RL_READLINE_VERSION < 0x0402) */
@@ -426,10 +514,10 @@ static struct int_vars {
   { &rl_num_chars_to_read,			0, 0 },	/* 23 */
   { &rl_dispatching,				0, 0 },	/* 24 */
   { &rl_gnu_readline_p,				0, 1 },	/* 25 */
-  { &rl_readline_state,				0, 0 },	/* 26 */
-  { &rl_explicit_arg,				0, 0 },	/* 27 */
-  { &rl_numeric_arg,				0, 0 },	/* 28 */
-  { &rl_editing_mode,				0, 0 },	/* 29 */
+  { &rl_readline_state,				0, 1 },	/* 26 */
+  { &rl_explicit_arg,				0, 1 },	/* 27 */
+  { &rl_numeric_arg,				0, 1 },	/* 28 */
+  { &rl_editing_mode,				0, 1 },	/* 29 */
   { &rl_attempted_completion_over,		0, 0 },	/* 30 */
   { &rl_completion_type,			0, 0 },	/* 31 */
   { &rl_readline_version,			0, 1 },	/* 32 */
@@ -440,7 +528,10 @@ static struct int_vars {
   { &rl_completion_mark_symlink_dirs,		0, 0 },	/* 37 */
   { &rl_prefer_env_winsize,			0, 0 },	/* 38 */
   { &rl_sort_completion_matches,		0, 0 },	/* 39 */
-  { &rl_completion_invoking_key,		1, 0 }	/* 40 */
+  { &rl_completion_invoking_key,		0, 1 },	/* 40 */
+  { &rl_executing_key,				0, 1 },	/* 41 */
+  { &rl_key_sequence_length,			0, 1 },	/* 42 */
+  { &rl_change_environment,			0, 0 }	/* 43 */
 };
 
 /*
@@ -453,7 +544,6 @@ static PerlIO *outstreamPIO = NULL;
  *	function pointer variable table for _rl_store_function(),
  *	_rl_fetch_funtion()
  */
-
 static int startup_hook_wrapper PARAMS((void));
 static int event_hook_wrapper PARAMS((void));
 static int getc_function_wrapper PARAMS((PerlIO *));
@@ -462,8 +552,7 @@ static char *completion_entry_function_wrapper PARAMS((const char *, int));;
 static char **attempted_completion_function_wrapper PARAMS((char *, int, int));
 static char *filename_quoting_function_wrapper PARAMS((char *text, int match_type,
 						    char *quote_pointer));
-static char *filename_dequoting_function_wrapper PARAMS((char *text,
-						      int quote_char));
+static char *filename_dequoting_function_wrapper PARAMS((char *text, int quote_char));
 static int char_is_quoted_p_wrapper PARAMS((char *text, int index));
 static void ignore_some_completions_function_wrapper PARAMS((char **matches));
 static int directory_completion_hook_wrapper PARAMS((char **textp));
@@ -474,14 +563,19 @@ static void completion_display_matches_hook_wrapper PARAMS((char **matches,
 static char *completion_word_break_hook_wrapper PARAMS((void));
 static int prep_term_function_wrapper PARAMS((int meta_flag));
 static int deprep_term_function_wrapper PARAMS((void));
-static int directory_rewrite_hook_wrapper PARAMS((char **));
+static int directory_rewrite_hook_wrapper PARAMS((char **dirnamep));
+static char *filename_rewrite_hook_wrapper PARAMS((char *text, int quote_char));
+static int signal_event_hook_wrapper PARAMS((void));
+static int input_available_hook_wrapper PARAMS((void));
+static int filename_stat_hook_wrapper PARAMS((char **fnamep));
 
 enum { STARTUP_HOOK, EVENT_HOOK, GETC_FN, REDISPLAY_FN,
        CMP_ENT, ATMPT_COMP,
        FN_QUOTE, FN_DEQUOTE, CHAR_IS_QUOTEDP,
        IGNORE_COMP, DIR_COMP, HIST_INHIBIT_EXP,
        PRE_INPUT_HOOK, COMP_DISP_HOOK, COMP_WD_BRK_HOOK,
-       PREP_TERM, DEPREP_TERM, DIR_REWRITE
+       PREP_TERM, DEPREP_TERM, DIR_REWRITE, FN_REWRITE,
+       SIG_EVT, INP_AVL, FN_STAT
 };
 
 static struct fn_vars {
@@ -577,6 +671,30 @@ static struct fn_vars {
     NULL,
     (Function *)directory_rewrite_hook_wrapper,
     NULL
+  },
+  {
+    (Function **)&rl_filename_rewrite_hook,			/* 18 */
+    NULL,
+    (Function *)filename_rewrite_hook_wrapper,
+    NULL
+  },
+  {
+    (Function **)&rl_signal_event_hook,				/* 19 */
+    NULL,
+    (Function *)signal_event_hook_wrapper,
+    NULL
+  },
+  {
+    (Function **)&rl_input_available_hook,			/* 20 */
+    NULL,
+    (Function *)input_available_hook_wrapper,
+    NULL
+  },
+  {
+    (Function **)&rl_filename_stat_hook,			/* 21 */
+    NULL,
+    (Function *)filename_stat_hook_wrapper,
+    NULL
   }
 };
 
@@ -585,8 +703,9 @@ static struct fn_vars {
  */
 
 /*
- * for rl_voidfunc_t : void fn(void)
+ * common utility wrappers
  */
+/* for rl_voidfunc_t : void fn(void) */
 static int
 voidfunc_wrapper(type)
      int type;
@@ -614,9 +733,7 @@ voidfunc_wrapper(type)
   return ret;
 }
 
-/*
- * for rl_vintfunc_t : void fn(int)
- */
+/* for rl_vintfunc_t : void fn(int) */
 static int
 vintfunc_wrapper(type, arg)
      int type;
@@ -647,9 +764,189 @@ vintfunc_wrapper(type, arg)
   return ret;
 }
 
-/*
- * for rl_icppfunc_t : int fn(char **)
- */
+/* for rl_vcpfunc_t  : void fn(char *) */
+#if 0
+static int
+vcpfunc_wrapper(type, text)
+     int type;
+     char *text;
+{
+  dSP;
+  int count;
+  int ret;
+  SV *svret;
+  
+  ENTER;
+  SAVETMPS;
+
+  PUSHMARK(sp);
+  if (text) {
+    XPUSHs(sv_2mortal(newSVpv(text, 0)));
+  } else {
+    XPUSHs(&PL_sv_undef);
+  }
+  PUTBACK;
+
+  count = perl_call_sv(fn_tbl[type].callback, G_SCALAR);
+  SPAGAIN;
+
+  if (count != 1)
+    croak("Gnu.xs:vcpfunc_wrapper: Internal error\n");
+
+  svret = POPs;
+  ret = SvIOK(svret) ? SvIV(svret) : -1;
+  PUTBACK;
+  FREETMPS;
+  LEAVE;
+  return ret;
+}
+#endif
+
+/* for rl_vcppfunc_t : void fn(char **) */
+#if 0
+static int
+vcppfunc_wrapper(type, arg)
+     int type;
+     char **arg;
+{
+  dSP;
+  int count;
+  SV *sv;
+  int ret;
+  SV *svret;
+  char *rstr;
+  
+  ENTER;
+  SAVETMPS;
+
+  if (arg && *arg) {
+    sv = sv_2mortal(newSVpv(*arg, 0));
+  } else {
+    sv = &PL_sv_undef;
+  }
+
+  PUSHMARK(sp);
+  XPUSHs(sv);
+  PUTBACK;
+
+  count = perl_call_sv(fn_tbl[type].callback, G_SCALAR);
+
+  SPAGAIN;
+
+  if (count != 1)
+    croak("Gnu.xs:vcppfunc_wrapper: Internal error\n");
+
+  svret = POPs;
+  ret = SvIOK(svret) ? SvIV(svret) : -1;
+
+  rstr = SvPV(sv, PL_na);
+  if (strcmp(*arg, rstr) != 0) {
+    xfree(*arg);
+    *arg = dupstr(rstr);
+  }
+
+  PUTBACK;
+  FREETMPS;
+  LEAVE;
+  return ret;
+}
+#endif
+
+/* for rl_hook_func_t, rl_ivoidfunc_t : int fn(void) */
+static int
+hook_func_wrapper(type)
+     int type;
+{
+  dSP;
+  int count;
+  int ret;
+
+  ENTER;
+  SAVETMPS;
+
+  PUSHMARK(sp);
+  count = perl_call_sv(fn_tbl[type].callback, G_SCALAR);
+  SPAGAIN;
+
+  if (count != 1)
+    croak("Gnu.xs:hook_func_wrapper: Internal error\n");
+
+  ret = POPi;			/* warns unless integer */
+  PUTBACK;
+  FREETMPS;
+  LEAVE;
+  return ret;
+}
+
+/* for rl_intfunc_t  : int fn(int) */
+#if 0
+static int
+intfunc_wrapper(type, arg)
+     int type;
+     int arg;
+{
+  dSP;
+  int count;
+  int ret;
+
+  ENTER;
+  SAVETMPS;
+
+  PUSHMARK(sp);
+  XPUSHs(sv_2mortal(newSViv(arg)));
+  PUTBACK;
+  count = perl_call_sv(fn_tbl[type].callback, G_SCALAR);
+  SPAGAIN;
+
+  if (count != 1)
+    croak("Gnu.xs:intfunc_wrapper: Internal error\n");
+
+  ret = POPi;			/* warns unless integer */
+  PUTBACK;
+  FREETMPS;
+  LEAVE;
+  return ret;
+}
+#endif
+
+/* for rl_icpfunc_t : int fn(char *) */
+#if 0
+static int
+icpfunc_wrapper(type, text)
+     int type;
+     char *text;
+{
+  dSP;
+  int count;
+  int ret;
+  
+  ENTER;
+  SAVETMPS;
+
+  PUSHMARK(sp);
+  if (text) {
+    XPUSHs(sv_2mortal(newSVpv(text, 0)));
+  } else {
+    XPUSHs(&PL_sv_undef);
+  }
+  PUTBACK;
+
+  count = perl_call_sv(fn_tbl[type].callback, G_SCALAR);
+
+  SPAGAIN;
+
+  if (count != 1)
+    croak("Gnu.xs:icpfunc_wrapper: Internal error\n");
+
+  ret = POPi;			/* warns unless integer */
+  PUTBACK;
+  FREETMPS;
+  LEAVE;
+  return ret;
+}
+#endif
+
+/* for rl_icppfunc_t : int fn(char **) */
 static int
 icppfunc_wrapper(type, arg)
      int type;
@@ -692,52 +989,10 @@ icppfunc_wrapper(type, arg)
   PUTBACK;
   FREETMPS;
   LEAVE;
-
   return ret;
 }
 
-#if 0
-/*
- * for rl_icpfunc_t : int fn(char *)
- */
-static int
-icpfunc_wrapper(type, text)
-     int type;
-     char *text;
-{
-  dSP;
-  int count;
-  int ret;
-  
-  ENTER;
-  SAVETMPS;
-
-  PUSHMARK(sp);
-  if (text) {
-    XPUSHs(sv_2mortal(newSVpv(text, 0)));
-  } else {
-    XPUSHs(&PL_sv_undef);
-  }
-  PUTBACK;
-
-  count = perl_call_sv(fn_tbl[type].callback, G_SCALAR);
-
-  SPAGAIN;
-
-  if (count != 1)
-    croak("Gnu.xs:icpfunc_wrapper: Internal error\n");
-
-  ret = POPi;			/* warns unless integer */
-  PUTBACK;
-  FREETMPS;
-  LEAVE;
-  return ret;
-}
-#endif
-
-/*
- * for rl_cpvfunc_t : (char *)fn(void)
- */
+/* for rl_cpvfunc_t : (char *)fn(void) */
 static char *
 cpvfunc_wrapper(type)
      int type;
@@ -765,8 +1020,129 @@ cpvfunc_wrapper(type)
   return str;
 }
 
+/* for rl_cpifunc_t   : (char *)fn(int) */
+#if 0
+static char *
+cpifunc_wrapper(type, arg)
+     int type;
+     int arg;
+{
+  dSP;
+  int count;
+  char *str;
+  SV *svret;
+  
+  ENTER;
+  SAVETMPS;
+
+  PUSHMARK(sp);
+  XPUSHs(sv_2mortal(newSViv(arg)));
+  PUTBACK;
+  count = perl_call_sv(fn_tbl[type].callback, G_SCALAR);
+  SPAGAIN;
+
+  if (count != 1)
+    croak("Gnu.xs:cpifunc_wrapper: Internal error\n");
+
+  svret = POPs;
+  str = SvOK(svret) ? dupstr(SvPV(svret, PL_na)) : NULL;
+  PUTBACK;
+  FREETMPS;
+  LEAVE;
+  return str;
+}
+#endif
+
+/* for rl_cpcpfunc_t  : (char *)fn(char *) */
+#if 0
+static char *
+cpcpfunc_wrapper(type, text)
+     int type;
+     char *text;
+{
+  dSP;
+  int count;
+  char *str;
+  SV *svret;
+  
+  ENTER;
+  SAVETMPS;
+
+  PUSHMARK(sp);
+  if (text) {
+    XPUSHs(sv_2mortal(newSVpv(text, 0)));
+  } else {
+    XPUSHs(&PL_sv_undef);
+  }
+  PUTBACK;
+
+  count = perl_call_sv(fn_tbl[type].callback, G_SCALAR);
+  SPAGAIN;
+
+  if (count != 1)
+    croak("Gnu.xs:cpcpfunc_wrapper: Internal error\n");
+
+  svret = POPs;
+  str = SvOK(svret) ? dupstr(SvPV(svret, PL_na)) : NULL;
+  PUTBACK;
+  FREETMPS;
+  LEAVE;
+  return str;
+}
+#endif
+
+/* for rl_cpcppfunc_t : (char *)fn(char **) */
+#if 0
+static char *
+cpcppfunc_wrapper(type, arg)
+     int type;
+     char **arg;
+{
+  dSP;
+  int count;
+  SV *sv;
+  char *str;
+  SV *svret;
+  char *rstr;
+  
+  ENTER;
+  SAVETMPS;
+
+  if (arg && *arg) {
+    sv = sv_2mortal(newSVpv(*arg, 0));
+  } else {
+    sv = &PL_sv_undef;
+  }
+
+  PUSHMARK(sp);
+  XPUSHs(sv);
+  PUTBACK;
+
+  count = perl_call_sv(fn_tbl[type].callback, G_SCALAR);
+
+  SPAGAIN;
+
+  if (count != 1)
+    croak("Gnu.xs:cpcppfunc_wrapper: Internal error\n");
+
+  svret = POPs;
+  str = SvOK(svret) ? dupstr(SvPV(svret, PL_na)) : NULL;
+
+  rstr = SvPV(sv, PL_na);
+  if (strcmp(*arg, rstr) != 0) {
+    xfree(*arg);
+    *arg = dupstr(rstr);
+  }
+
+  PUTBACK;
+  FREETMPS;
+  LEAVE;
+  return str;
+}
+#endif
+
 /*
- * for rl_linebuf_func_t : int fn(char *, int)
+ * for rl_icpintfunc_t : int fn(char *, int)
  */
 static int
 icpintfunc_wrapper(type, text, index)
@@ -804,6 +1180,51 @@ icpintfunc_wrapper(type, text, index)
   return ret;
 }
 
+/*
+ * for rl_dequote_func_t : (char *)fn(char *, int)
+ */
+static char *
+dequoting_function_wrapper(type, text, quote_char)
+     int type;
+     char *text;
+     int quote_char;
+{
+  dSP;
+  int count;
+  SV *replacement;
+  char *str;
+  
+  ENTER;
+  SAVETMPS;
+
+  PUSHMARK(sp);
+  if (text) {
+    XPUSHs(sv_2mortal(newSVpv(text, 0)));
+  } else {
+    XPUSHs(&PL_sv_undef);
+  }
+  XPUSHs(sv_2mortal(newSViv(quote_char)));
+  PUTBACK;
+
+  count = perl_call_sv(fn_tbl[type].callback, G_SCALAR);
+
+  SPAGAIN;
+
+  if (count != 1)
+    croak("Gnu.xs:dequoting_function_wrapper: Internal error\n");
+
+  replacement = POPs;
+  str = SvOK(replacement) ? dupstr(SvPV(replacement, PL_na)) : NULL;
+
+  PUTBACK;
+  FREETMPS;
+  LEAVE;
+  return str;
+}
+
+/*
+ * Specific wrappers for each variable
+ */
 static int
 startup_hook_wrapper()		{ return voidfunc_wrapper(STARTUP_HOOK); }
 static int
@@ -827,7 +1248,6 @@ redisplay_function_wrapper()	{ voidfunc_wrapper(REDISPLAY_FN); }
  * call a perl function as rl_completion_entry_function
  * for rl_compentry_func_t : (char *)fn(const char *, int)
  */
-
 static char *
 completion_entry_function_wrapper(text, state)
      const char *text;
@@ -1001,52 +1421,13 @@ filename_quoting_function_wrapper(text, match_type, quote_pointer)
   return str;
 }
 
-/*
- * call a perl function as rl_filename_dequoting_function
- * for rl_dequote_func_t : (char *)fn(char *, int)
- */
-
 static char *
 filename_dequoting_function_wrapper(text, quote_char)
      char *text;
      int quote_char;
 {
-  dSP;
-  int count;
-  SV *replacement;
-  char *str;
-  
-  ENTER;
-  SAVETMPS;
-
-  PUSHMARK(sp);
-  if (text) {
-    XPUSHs(sv_2mortal(newSVpv(text, 0)));
-  } else {
-    XPUSHs(&PL_sv_undef);
-  }
-  XPUSHs(sv_2mortal(newSViv(quote_char)));
-  PUTBACK;
-
-  count = perl_call_sv(fn_tbl[FN_DEQUOTE].callback, G_SCALAR);
-
-  SPAGAIN;
-
-  if (count != 1)
-    croak("Gnu.xs:filename_dequoting_function_wrapper: Internal error\n");
-
-  replacement = POPs;
-  str = SvOK(replacement) ? dupstr(SvPV(replacement, PL_na)) : NULL;
-
-  PUTBACK;
-  FREETMPS;
-  LEAVE;
-  return str;
-}
-
-/*
- * call a perl function as rl_char_is_quoted_p
- */
+  return dequoting_function_wrapper(FN_DEQUOTE, text, quote_char);
+}  
 
 static int
 char_is_quoted_p_wrapper(text, index)
@@ -1144,20 +1525,12 @@ ignore_some_completions_function_wrapper(matches)
   LEAVE;
 }
 
-/*
- * call a perl function as rl_directory_completion_hook
- */
-
 static int
 directory_completion_hook_wrapper(textp)
      char **textp;
 {
   return icppfunc_wrapper(DIR_COMP, textp);
 }
-
-/*
- * call a perl function as history_inhibit_expansion_function
- */
 
 static int
 history_inhibit_expansion_function_wrapper(text, index)
@@ -1237,16 +1610,34 @@ prep_term_function_wrapper(meta_flag)
 }
 
 static int
-deprep_term_function_wrapper()	{ return voidfunc_wrapper(DEPREP_TERM); }
+deprep_term_function_wrapper() { return voidfunc_wrapper(DEPREP_TERM); }
 
-/*
- * call a perl function as rl_directory_completion_hook
- */
 static int
-directory_rewrite_hook_wrapper(dirname)
-     char **dirname;
+directory_rewrite_hook_wrapper(dirnamep)
+     char **dirnamep;
 {
-  return icppfunc_wrapper(DIR_REWRITE, dirname);
+  return icppfunc_wrapper(DIR_REWRITE, dirnamep);
+}
+
+static char *
+filename_rewrite_hook_wrapper(text, quote_char)
+     char *text;
+     int quote_char;
+{
+  return dequoting_function_wrapper(FN_REWRITE, text, quote_char);
+}  
+
+static int
+signal_event_hook_wrapper() { return hook_func_wrapper(SIG_EVT); }
+
+static int
+input_available_hook_wrapper() { return hook_func_wrapper(INP_AVL); }
+
+static int
+filename_stat_hook_wrapper(fnamep)
+     char **fnamep;
+{
+  return icppfunc_wrapper(FN_STAT, fnamep);
 }
 
 /*
@@ -1426,10 +1817,11 @@ _rl_discard_keymap(map)
 	RETVAL
 
  # comment out until GNU Readline 6.2 will be released.
- #void
- #rl_free_keymap(map)
- #	Keymap map
- #    PROTOTYPE: $
+
+void
+rl_free_keymap(map)
+	Keymap map
+    PROTOTYPE: $
 
 Keymap
 rl_get_keymap()
@@ -1984,7 +2376,12 @@ rl_initialize()
       /* from perl.c:perl_destruct() */
 #if defined(USE_ENVIRON_ARRAY) && !defined(PERL_USE_SAFE_PUTENV) \
   && !defined(PERL_DARWIN)
+# if ((PERL_VERSION > 8) || (PERL_VERSION == 8 && PERL_SUBVERSION >= 6)) 
+      /* Perl 5.8.6 introduced PL_use_safe_putenv. */
       if (environ != PL_origenviron && !PL_use_safe_putenv
+#  else
+      if (environ != PL_origenviron
+#  endif
 #  ifdef USE_ITHREADS
 	  /* only main thread can free environ[0] contents */
 	  && PL_curinterp == aTHX

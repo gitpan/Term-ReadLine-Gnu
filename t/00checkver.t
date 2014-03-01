@@ -1,7 +1,7 @@
 # -*- perl -*-
 #	00check.t - check versions
 #
-#	$Id: 00checkver.t,v 1.2 2009/02/27 14:16:14 hiroo Exp $
+#	$Id: 00checkver.t 438 2014-02-03 14:40:47Z hayashi $
 #
 #	Copyright (c) 2009 Hiroo Hayashi.  All rights reserved.
 #
@@ -33,6 +33,7 @@ my $t = new Term::ReadLine 'ReadLineTest';
 print "ok $n\tnew\n"; $n++;
 
 print "OS: $^O\nPerl version: $]\n";
+$t->Attribs->{outstream} = \*STDOUT;
 $t->rl_call_function('display-readline-version');
 print "ok $n\tdone\n"; $n++;
 

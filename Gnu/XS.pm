@@ -2,7 +2,7 @@
 #
 #	XS.pm : perl function definition for Term::ReadLine::Gnu
 #
-#	$Id: XS.pm,v 1.23 2008-02-08 00:43:46+09 hiroo Exp $
+#	$Id: XS.pm 438 2014-02-03 14:40:47Z hayashi $
 #
 #	Copyright (c) 2008 Hiroo Hayashi.  All rights reserved.
 #
@@ -579,10 +579,7 @@ sub _trp_completion_function ( $$ ) {
 	return undef unless defined $_matches[0];
     }
 
-    for (; $_i <= $#_matches; $_i++) {
-	return $_matches[$_i] if ($_matches[$_i] =~ /^\Q$text/);
-    }
-    return undef;
+    return $_matches[$_i];
 }
 
 1;

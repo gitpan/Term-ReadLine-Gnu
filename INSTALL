@@ -1,5 +1,5 @@
 -*- Indented-text -*-
-#	$Id: INSTALL,v 1.23 2009/03/20 16:06:37 hiroo Exp $
+#	$Id: INSTALL 447 2014-03-01 16:20:29Z hayashi $
 
 1. How to Install Term::ReadLine::Gnu
 
@@ -38,17 +38,7 @@
 	directory?' (This section is found in the Perl 5.6
 	documentation).
 
-1.3 Known Issue - Segmentation Fault during exiting Perl.
-
-	If "make test" fails even though all test passed, try
-		perl -Mblib t/00checkver.t
-	If segmentation fault occurs after all test done, if encounter
-	the putenv() bug. You have to recompile Perl with
-	-DPERL_USE_SAFE_PUTENV.  See
-	   http://rt.cpan.org/Ticket/Display.html?id=37194
-	for more details.
-
-1.4 Trouble Shooting
+1.3 Trouble Shooting
 
         If you have any trouble when using or installing this module,
 	please let me (hiroo.hayashi@computer.org) know by E-Mail.  It
@@ -66,7 +56,17 @@
 2. How to Install GNU Readline Library
 
 	Now this module supports only GNU Readline Library 2.1 and
-	later. Executing `perl Makefile.PL` detects which version of
+	later.  But GNU Readline 2.2 has some bugs, so Use 2.2.1
+	instead.  GNU Readline Library 4.2 is not supported.  Use 4.2a
+	instead.
+
+	If you have any reasons in which use must use one of the follows;
+		GNU Readline Library 2.1
+		libreadline.a in bash-2.0.tar.gz
+		Cygwin b20.1
+	see INSTALL file which is included in Term-ReadLine-Gnu-1.11.
+
+	Executing `perl Makefile.PL` detects which version of
 	the GNU Readline Library is already installed and warns you if
 	you have the unsupported version.
 
@@ -79,9 +79,6 @@
 
 2.1. Install
 
-	readline-2.2.tar.gz has some bugs, so I strongly recommend you
-	to use readline-2.2.1.tar.gz and/or later instead.
-
 	1. get and extract readline-XX.tar.gz
 
 	2. configure
@@ -89,31 +86,26 @@
 	3. make and install
 		% make install
 
-	If you have any reason in which use must use one of the follows;
-		readline-2.1
-		libreadline.a in bash-2.0.tar.gz
-		Cygwin b20.1
-	see INSTALL file which is included in Term-ReadLine-Gnu-1.11.
+2.1.1. Install on Mac OS X
 
-2.2 Shared Library
-	!!!Description in this section is old.  See document in the GNU
-	Readline Library.!!!
+	/usr/bin/perl on Mac OS X 10.5 (Leopard) and later supports
+	32bit/64bit universal binary.  Make Makefile as follows;
 
-	If you want to build it as shared library, use readline-4.0
-	(or later).  Type `make shared' instead of `make' to build
-	shared library.
+	# tested only on Mavericks
+	ARCHFLAGS='-arch x86_64' perl Makefile.PL --prefix=/usr/local/gnu
 
-	You HAVE TO build the library as shared library on the
-	following OSs;
-		HPUX
+	Or build 32bit/64bit-universal GNU Readline Library as
+	follows.  (works on GNU Readline 6.3 and later)
 
-	You DON'T HAVE TO and may build the library as shared library
-	on the following OSs;
-		GNU/Linux 2.x
-		SunOS 4.x, 5.x
-		AIX 4.1.x
-		Cygwin 20.x
+	Enable the following lines in support/shobj-conf in GNU
+        Readline 6.3 distribution;
 
-	# Please let me know on your experience on others OSs.
+	# for 32 and 64bit universal library
+	#SHOBJ_ARCHFLAGS='-arch i386 -arch x86_64'
+	#SHOBJ_CFLAGS=${SHOBJ_CFLAGS}' -arch i386 -arch x86_64'
+
+	run configure script and do 'make install' and make Makefile simply;
+	# tested only on Mavericks
+	perl Makefile.PL --prefix=/usr/local/gnu
 
 EOF

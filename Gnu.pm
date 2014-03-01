@@ -1,9 +1,9 @@
 #
 #	Gnu.pm --- The GNU Readline/History Library wrapper module
 #
-#	$Id: Gnu.pm,v 1.101 2010/05/02 10:39:19 hiroo Exp $
+#	$Id: Gnu.pm 445 2014-03-01 16:14:02Z hayashi $
 #
-#	Copyright (c) 2009 Hiroo Hayashi.  All rights reserved.
+#	Copyright (c) 2014 Hiroo Hayashi.  All rights reserved.
 #
 #	This program is free software; you can redistribute it and/or
 #	modify it under the same terms as Perl itself.
@@ -73,7 +73,7 @@ END
     use DynaLoader;
     use vars qw($VERSION @ISA @EXPORT_OK);
 
-    $VERSION = '1.20';
+    $VERSION = '1.21';
 
     # Term::ReadLine::Gnu::AU makes a function in
     # `Term::ReadLine::Gnu::XS' as a method.
@@ -192,8 +192,12 @@ sub RL_STATE_CALLBACK		{ 0x080000; } #	using the callback interface
 sub RL_STATE_VIMOTION		{ 0x100000; } #	reading vi motion arg
 sub RL_STATE_MULTIKEY		{ 0x200000; } #	reading multiple-key command
 sub RL_STATE_VICMDONCE		{ 0x400000; } #	entered vi command mode at least once
-# The value was changed since TRL 6.0
-sub RL_STATE_DONE		{ $readline_version < 0x0600 ? 0x80000 : 0x800000; } # done; accepted line
+# The following RL_STATE_* is defined since TRL 6.1
+sub RL_STATE_REDISPLAYING	{ 0x800000; } #	updating terminal display
+# The value was changed since TRL 6.0 and 6.1
+# done; accepted line
+sub RL_STATE_DONE { $readline_version < 0x0600 ? 0x80000 : 
+			($readline_version < 0x0601 ? 0x800000 : 0x1000000); }
 
 #
 #	Methods Definition
@@ -517,9 +521,10 @@ use vars qw(%_rl_vars);
        rl_special_prefixes			=> ['S', 10],
        history_no_expand_chars			=> ['S', 11],
        history_search_delimiter_chars		=> ['S', 12],
-       rl_executing_macro			=> ['S', 13], # GRL4.2
-       history_word_delimiters			=> ['S', 14], # GRL4.2
-       rl_display_prompt			=> ['S', 15], # GRL6.0
+       rl_executing_macro			=> ['S', 13], # GRL 4.2
+       history_word_delimiters			=> ['S', 14], # GRL 4.2
+       rl_display_prompt			=> ['S', 15], # GRL 6.0
+       rl_executing_keyseq			=> ['S', 16], # GRL 6.3
 
        rl_point					=> ['I', 0],
        rl_end					=> ['I', 1],
@@ -545,9 +550,9 @@ use vars qw(%_rl_vars);
        rl_catch_signals				=> ['I', 20], # GRL 4.0
        rl_catch_sigwinch			=> ['I', 21], # GRL 4.0
        rl_already_prompted			=> ['I', 22], # GRL 4.1
-       rl_num_chars_to_read			=> ['I', 23], # GRL 4.2
+       rl_num_chars_to_read			=> ['I', 23], # GRL 4.1
        rl_dispatching				=> ['I', 24], # GRL 4.2
-       rl_gnu_readline_p			=> ['I', 25], # GRL 4.2
+       rl_gnu_readline_p			=> ['I', 25], # GRL 4.1
        rl_readline_state			=> ['I', 26], # GRL 4.2
        rl_explicit_arg				=> ['I', 27], # GRL 4.2
        rl_numeric_arg				=> ['I', 28], # GRL 4.2
@@ -563,6 +568,9 @@ use vars qw(%_rl_vars);
        rl_prefer_env_winsize			=> ['I', 38], # GRL 5.1
        rl_sort_completion_matches		=> ['I', 39], # GRL 6.0
        rl_completion_invoking_key		=> ['C', 40], # GRL 6.0
+       rl_executing_key				=> ['I', 41], # GRL 6.3
+       rl_key_sequence_length			=> ['I', 42], # GRL 6.3
+       rl_change_environment			=> ['I', 43], # GRL 6.3
 
        rl_startup_hook				=> ['F', 0],
        rl_event_hook				=> ['F', 1],
@@ -581,6 +589,11 @@ use vars qw(%_rl_vars);
        rl_completion_word_break_hook		=> ['F', 14], # GRL 5.0
        rl_prep_term_function			=> ['F', 15], # GRL 4.2
        rl_deprep_term_function			=> ['F', 16], # GRL 4.2
+       rl_directory_rewrite_hook		=> ['F', 17], # GRL 4.2
+       rl_filename_rewrite_hook			=> ['F', 18], # GRL 6.1
+       rl_signal_event_hook			=> ['F', 19], # GRL 6.3
+       rl_input_available_hook			=> ['F', 20], # GRL 6.3
+       rl_filename_stat_hook			=> ['F', 21], # GRL 6.3
 
        rl_instream				=> ['IO', 0],
        rl_outstream				=> ['IO', 1],
@@ -814,7 +827,7 @@ in C<MAP>.  Returns non-zero in case of error.
 =item C<bind_key_if_unbound(KEY, FUNCTION [,MAP])>
 
 	int	rl_bind_key_if_unbound(int key, FunctionPtr|str function,
-			    	       Keymap|str map = rl_get_keymap()) #GRL5.0
+			    	       Keymap|str map = rl_get_keymap()) # GRL 5.0
 
 =item C<unbind_key(KEY [,MAP])>
 
@@ -840,7 +853,7 @@ Bind C<KEY> to the null function.  Returns non-zero in case of error.
 =item C<set_key(KEYSEQ, FUNCTION [,MAP])>
 
 	int	rl_set_key(str keyseq, FunctionPtr|str function,
-			   Keymap|str map = rl_get_keymap())
+			   Keymap|str map = rl_get_keymap())	# GRL 4.2
 
 =item C<bind_keyseq_if_unbound(KEYSEQ, FUNCTION [,MAP])>
 
@@ -877,7 +890,7 @@ detail see 'GNU Readline Library Manual'.
 
 =item C<get_function_name(FUNCTION)>
 
-	str	rl_get_function_name(FunctionPtr function)
+	str	rl_get_function_name(FunctionPtr function)	# TRG orignal
 
 =item C<function_of_keyseq(KEYMAP [,MAP])>
 
@@ -956,11 +969,15 @@ detail see 'GNU Readline Library Manual'.
 
 =item C<on_new_line_with_prompt>
 
-	int	rl_on_new_line_with_prompt()	# GRL 4.1
+	int	rl_on_new_line_with_prompt()			# GRL 4.1
 
 =item C<reset_line_state>
 
 	int	rl_reset_line_state()
+
+=item C<crlf>
+
+	int	rl_crlf()
 
 =item C<rl_show_char(C)>
 
@@ -969,10 +986,6 @@ detail see 'GNU Readline Library Manual'.
 =item C<message(FMT[, ...])>
 
 	int	rl_message(str fmt, ...)
-
-=item C<crlf>
-
-	int	rl_crlf()			# GRL 4.2
 
 =item C<clear_message>
 
@@ -988,11 +1001,11 @@ detail see 'GNU Readline Library Manual'.
 
 =item C<expand_prompt(PROMPT)>
 
-	int	rl_expand_prompt(str prompt)	# GRL 4.2
+	int	rl_expand_prompt(str prompt)
 
 =item C<set_prompt(PROMPT)>
 
-	int	rl_set_prompt(const str prompt)	# GRL 4.2
+	int	rl_set_prompt(const str prompt)			# GRL 4.2
 
 =back
 
@@ -1040,15 +1053,15 @@ detail see 'GNU Readline Library Manual'.
 
 =item C<execute_next(C)>
 
-	int	rl_execute_next(int c)		# GRL 4.2
+	int	rl_execute_next(int c)
 
 =item C<clear_pending_input()>
 
-	int	rl_clear_pending_input()	# GRL 4.2
+	int	rl_clear_pending_input()			# GRL 4.2
 
 =item C<set_keyboard_input_timeout(uSEC)>
 
-	int	rl_set_keyboard_input_timeout(int usec)	# GRL 4.2
+	int	rl_set_keyboard_input_timeout(int usec)		# GRL 4.2
 
 =back
 
@@ -1058,15 +1071,15 @@ detail see 'GNU Readline Library Manual'.
 
 =item C<prep_terminal(META_FLAG)>
 
-	void	rl_prep_terminal(int META_FLAG)	# GRL 4.2
+	void	rl_prep_terminal(int META_FLAG)
 
 =item C<deprep_terminal()>
 
-	void	rl_deprep_terminal()		# GRL 4.2
+	void	rl_deprep_terminal()
 
 =item C<tty_set_default_bindings(KMAP)>
 
-	void	rl_tty_set_default_bindings([Keymap KMAP])	# GRL 4.2
+	void	rl_tty_set_default_bindings([Keymap KMAP])	# GRL 4.0
 
 =item C<tty_unset_default_bindings(KMAP)>
 
@@ -1074,7 +1087,7 @@ detail see 'GNU Readline Library Manual'.
 
 =item C<reset_terminal([TERMINAL_NAME])>
 
-	int	rl_reset_terminal(str terminal_name = getenv($TERM)) # GRL 4.2
+	int	rl_reset_terminal(str terminal_name = getenv($TERM))
 
 =back
 
@@ -1092,9 +1105,19 @@ detail see 'GNU Readline Library Manual'.
 	NOT IMPLEMENTED YET!
 	int	rl_restore_state(struct readline_state *sp)	# GRL 6.0
 
+=item C<free(MEM)>
+
+	Not implemented since not required for Perl.
+	int	rl_(void *mem)					# GRL 6.0
+
 =item C<replace_line(TEXT [,CLEAR_UNDO])>
 
 	int	rl_replace_line(str text, int clear_undo)	# GRL 4.3
+
+=item C<extend_line_buffer(LEN)>
+
+	Not implemented since not required for Perl.
+	int	rl_extend_line_buffer(int len)
 
 =item C<initialize>
 
@@ -1106,7 +1129,7 @@ detail see 'GNU Readline Library Manual'.
 
 =item C<alphabetic(C)>
 
-	int	rl_alphabetic(int C)
+	int	rl_alphabetic(int C)				# GRL 4.2
 
 =item C<display_match_list(MATCHES [,LEN [,MAX]])>
 
@@ -1138,7 +1161,7 @@ When C<MAX> is ommited, the max length of an item in @matches is used.
 
 =item C<variable_value(VARIABLE)>
 
-	str	rl_variable_value(const str variable)	# GRL 5.1
+	str	rl_variable_value(const str variable)		# GRL 5.1
 
 =item C<variable_dumper(READABLE)>
 
@@ -1146,11 +1169,15 @@ When C<MAX> is ommited, the max length of an item in @matches is used.
 
 =item C<set_paren_blink_timeout(uSEC)>
 
-	int	rl_set_paren_blink_timeout(usec)	# GRL 4.2
+	int	rl_set_paren_blink_timeout(usec)		# GRL 4.2
 
 =item C<get_termcap(cap)>
 
 	str	rl_get_termcap(cap)
+
+=item C<clear_history>
+
+    void	rl_clear_history()				# GRL 6.3
 
 =back
 
@@ -1180,43 +1207,43 @@ When C<MAX> is ommited, the max length of an item in @matches is used.
 
 =item C<cleanup_after_signal>
 
-	void	rl_cleanup_after_signal()	# GRL 4.0
+	void	rl_cleanup_after_signal()			# GRL 4.0
 
 =item C<free_line_state>
 
-	void	rl_free_line_state()	# GRL 4.0
+	void	rl_free_line_state()				# GRL 4.0
 
 =item C<reset_after_signal>
 
-	void	rl_reset_after_signal()	# GRL 4.0
+	void	rl_reset_after_signal()				# GRL 4.0
 
 =item C<echo_signal_char>
 
-	void	rl_echo_signal_char(int sig)	# GRL 6.0
+	void	rl_echo_signal_char(int sig)			# GRL 6.0
 
 =item C<resize_terminal>
 
-	void	rl_resize_terminal()	# GRL 4.0
+	void	rl_resize_terminal()				# GRL 4.0
 
 =item C<set_screen_size(ROWS, COLS)>
 
-	void	rl_set_screen_size(int ROWS, int COLS)	# GRL 4.2
+	void	rl_set_screen_size(int ROWS, int COLS)		# GRL 4.2
 
 =item C<get_screen_size()>
 
-	(int rows, int cols)	rl_get_screen_size()	# GRL 4.2
+	(int rows, int cols)	rl_get_screen_size()		# GRL 4.2
 
 =item C<reset_screen_size()>
 
-	void	rl_reset_screen_size()	# GRL 5.1
+	void	rl_reset_screen_size()				# GRL 5.1
 
 =item C<set_signals>
 
-	int	rl_set_signals()	# GRL 4.0
+	int	rl_set_signals()				# GRL 4.0
 
 =item C<clear_signals>
 
-	int	rl_clear_signals()	# GRL 4.0
+	int	rl_clear_signals()				# GRL 4.0
 
 =back
 
@@ -1230,7 +1257,7 @@ When C<MAX> is ommited, the max length of an item in @matches is used.
 
 =item C<completion_mode(FUNCTION)>
 
-	int	rl_completion_mode(FunctionPtr|str function)
+	int	rl_completion_mode(FunctionPtr|str function)	# GRL 4.3
 
 =item C<completion_matches(TEXT [,FUNC])>
 
@@ -1247,7 +1274,7 @@ When C<MAX> is ommited, the max length of an item in @matches is used.
 
 =item C<list_completion_function(TEXT, STATE)>
 
-	str	list_completion_function(str text, int state)
+	str	list_completion_function(str text, int state)	# TRG original
 
 =back
 
@@ -1263,6 +1290,16 @@ When C<MAX> is ommited, the max length of an item in @matches is used.
 
 	void	using_history()
 
+=item C<history_get_history_state>
+
+	NOT IMPLEMENTED YET!
+	HISTORY_STATE	*history_get_hitory_state()		# GRL 6.3
+
+=item C<history_set_history_state>
+
+	NOT IMPLEMENTED YET!
+	void	*history_set_hitory_state(HISTORY_STATE *state)	# GRL 6.3
+
 =back
 
 =item History List Management
@@ -1272,6 +1309,28 @@ When C<MAX> is ommited, the max length of an item in @matches is used.
 =item C<addhistory(STRING[, STRING, ...])>
 
 	void	add_history(str string)
+
+=item C<add_history_time(STRING)>
+
+	void	add_history_time(str string)			# GRL 5.0
+
+=item C<remove_history(WHICH)>
+
+	str	remove_history(int which)
+
+=item C<free_history(HISTENT)>
+
+	Not implemented since Term::ReadLine::Gnu does not support the
+	member 'data' of HIST_ENTRY structure, remove_history() covers it.
+	histdata_t	free_history_entry(HIST_ENTRY *histent)	# GRL 5.0
+
+=item C<replace_history_entry(WHICH, LINE)>
+
+	str	replace_history_entry(int which, str line)
+
+=item C<clear_history>
+
+	void	clear_history()
 
 =item C<StifleHistory(MAX)>
 
@@ -1292,22 +1351,6 @@ This is equivalent with 'stifle_history(undef)'.
 sets the history of input, from where it can be used if the actual
 C<readline> is present.
 
-=item C<add_history_time(STRING)>
-
-	void	add_history_time(str string)	# GRL 5.0
-
-=item C<remove_history(WHICH)>
-
-	str	remove_history(int which)
-
-=item C<replace_history_entry(WHICH, LINE)>
-
-	str	replace_history_entry(int which, str line)
-
-=item C<clear_history>
-
-	void	clear_history()
-
 =item C<history_is_stifled>
 
 	int	history_is_stifled()
@@ -1317,6 +1360,11 @@ C<readline> is present.
 =item Information About the History List
 
 =over 4
+
+=item C<history_list>
+
+	Not implemented since not required for Perl.
+	HIST_ENTRY **history_list()
 
 =item C<where_history>
 
@@ -1330,9 +1378,9 @@ C<readline> is present.
 
 	str	history_get(offset)
 
-=item C<history_get_time(OFFSET)>
+=item C<history_get_time(OFFSET)
 
-	time_t	history_get_time(offset)
+	time_t	history_get_time(offset)			# GRL 5.0
 
 =item C<history_total_bytes>
 
@@ -1454,9 +1502,9 @@ Note that this function returns C<expansion> in scalar context.
 
 =head2 C<Term::ReadLine::Gnu> Variables
 
-Following GNU Readline/History Library variables can be accessed from
-Perl program.  See 'GNU Readline Library Manual' and ' GNU History
-Library Manual' for each variable.  You can access them with
+Following GNU Readline/History Library variables can be accessed by a
+Perl program.  See 'GNU Readline Library Manual' and 'GNU History
+Library Manual' for details of each variable.  You can access them with
 C<Attribs> methods.  Names of keys in this hash conform to standard
 conventions with the leading C<rl_> stripped.
 
@@ -1475,41 +1523,47 @@ Examples:
 	int rl_end
 	int rl_mark
 	int rl_done
-	int rl_num_chars_to_read (GRL 4.2)
+	int rl_num_chars_to_read (GRL 4.1)
 	int rl_pending_input
-	int rl_dispatching (GRL 4.2)
+	int rl_dispatching
 	int rl_erase_empty_line (GRL 4.0)
 	str rl_prompt (read only)
-	str rl_display_prompt (GRL 6.0)
+	str rl_display_prompt
 	int rl_already_prompted (GRL 4.1)
 	str rl_library_version (read only)
 	int rl_readline_version (read only)
-	int rl_gnu_readline_p (GRL 4.2)
+	int rl_gnu_readline_p (GRL 4.1, read only)
 	str rl_terminal_name
 	str rl_readline_name
 	filehandle rl_instream
 	filehandle rl_outstream
 	int rl_prefer_env_winsize (GRL 5.1)
-	pfunc rl_last_func (GRL 4.2)
+	pfunc rl_last_func (GRL 4.2, read only)
 	pfunc rl_startup_hook
 	pfunc rl_pre_input_hook (GRL 4.0)
 	pfunc rl_event_hook
 	pfunc rl_getc_function
+	pfunc rl_signal_event_hook (GRL 6.3)
+	pfunc rl_input_available_hook (GRL 6.3)
 	pfunc rl_redisplay_function
-	pfunc rl_prep_term_function (GRL 4.2)
-	pfunc rl_deprep_term_function (GRL 4.2)
+	pfunc rl_prep_term_function (GRL 2.1)
+	pfunc rl_deprep_term_function (GRL 2.1)
 	Keymap rl_executing_keymap (read only)
 	Keymap rl_binding_keymap (read only)
-	str rl_executing_macro (GRL 4.2)
-	int rl_readline_state (GRL 4.2)
-	int rl_explicit_arg (GRL 4.2)
-	int rl_numeric_arg (GRL 4.2)
-	int rl_editing_mode (GRL 4.2)
+	str rl_executing_macro (GRL 4.2, read only)
+	int rl_executing_key (GRL 6.3, read only)
+	str rl_executing_keyseq (GRL 6.3, read only)
+	int rl_key_sequence_length (read only)
+	int rl_readline_state (GRL 4.2, read only)
+	int rl_explicit_arg (read only)
+	int rl_numeric_arg (read only)
+	int rl_editing_mode (read only)
 
 =item Signal Handling Variables
 
 	int rl_catch_signals (GRL 4.0)
 	int rl_catch_sigwinch (GRL 4.0)
+	int rl_change_environment (GRL 6.3)
 
 =item Completion Variables
 
@@ -1518,7 +1572,12 @@ Examples:
 	pfunc rl_filename_quoting_function
 	pfunc rl_filename_dequoting_function
 	pfunc rl_char_is_quoted_p
-	int rl_completion_query_items
+	pfunc rl_ignore_some_completions_function
+	pfunc rl_directory_completion_hook
+	pfunc rl_directory_rewrite_hook (GRL 4.2)
+	pfunc rl_filename_stat_hook (GRL 6.3)
+	pfunc rl_filename_rewrite_hook (GRL 6.1)
+	pfunc rl_completion_display_matches_hook (GRL 4.0)
 	str rl_basic_word_break_characters
 	str rl_basic_quote_characters
 	str rl_completer_word_break_characters
@@ -1526,36 +1585,34 @@ Examples:
 	str rl_completer_quote_characters
 	str rl_filename_quote_characters
 	str rl_special_prefixes
+	int rl_completion_query_items
 	int rl_completion_append_character
 	int rl_completion_suppress_append (GRL 4.3)
-	int rl_completion_quote_charactor (GRL 5.0)
+	int rl_completion_quote_character (GRL 5.0)
 	int rl_completion_suppress_quote (GRL 5.0)
 	int rl_completion_found_quote (GRL 5.0)
 	int rl_completion_mark_symlink_dirs (GRL 4.3)
 	int rl_ignore_completion_duplicates
 	int rl_filename_completion_desired
 	int rl_filename_quoting_desired
-	int rl_attempted_completion_over (GRL 4.2)
+	int rl_attempted_completion_over
 	int rl_sort_completion_matches (GRL 6.0)
-	int rl_completion_type (GRL 4.2)
-	int rl_completion_invoking_key (GRL 6.0)
+	int rl_completion_type (read only)
+	int rl_completion_invoking_key (GRL 6.0, read only)
 	int rl_inhibit_completion
-	pfunc rl_ignore_some_completion_function
-	pfunc rl_directory_completion_hook
-	pfunc rl_completion_display_matches_hook (GRL 4.0)
 
 =item History Variables
 
-	int history_base
-	int history_length
-	int history_max_entries (called `max_input_history'. read only)
+	int history_base (read only)
+	int history_length (read only)
+	int history_max_entries (called `max_input_history', read only)
 	int history_write_timestamps (GRL 5.0)
 	char history_expansion_char
 	char history_subst_char
 	char history_comment_char
 	str history_word_delimiters (GRL 4.2)
-	str history_no_expand_chars
 	str history_search_delimiter_chars
+	str history_no_expand_chars
 	int history_quotes_inhibit_expansion
 	pfunc history_inhibit_expansion_function
 
@@ -1830,6 +1887,10 @@ None.
 
 =over 4
 
+=item Term::ReadLine::Gnu Project Home Page
+
+	http://sourceforge.net/projects/perl-trg/
+
 =item GNU Readline Library Manual
 
 =item GNU History Library Manual
@@ -1840,27 +1901,6 @@ None.
 
 =item F<eg/*> and F<t/*> in the Term::ReadLine::Gnu distribution
 
-=item Articles related to Term::ReadLine::Gnu
-
-=over 4
-
-=item effective perl programming
-
-	http://www.usenix.org/publications/login/2000-7/features/effective.html
-
-This article demonstrates how to integrate Term::ReadLine::Gnu into an
-interactive command line program.
-
-=item eijiro (Japanese)
-
-	http://bulknews.net/lib/columns/02_eijiro/column.html
-
-A command line interface to Eijiro, Japanese-English dictionary
-service on WWW.
-
-
-=back
-
 =item Works which use Term::ReadLine::Gnu
 
 =over 4
@@ -1869,9 +1909,9 @@ service on WWW.
 
 	perl -d
 
-=item The Perl Shell (psh)
+=item Perl Shell (psh)
 
-	http://www.focusresearch.com/gregor/psh/
+	http://gnp.github.io/psh/
 
 The Perl Shell is a shell that combines the interactive nature of a
 Unix shell with the power of Perl.
@@ -1880,7 +1920,7 @@ A programmable completion feature compatible with bash is implemented.
 
 =item SPP (Synopsys Plus Perl)
 
-	http://www.stanford.edu/~jsolomon/SPP/
+	http://vlsiweb.stanford.edu/~jsolomon/SPP/
 
 SPP (Synopsys Plus Perl) is a Perl module that wraps around Synopsys'
 shell programs.  SPP is inspired by the original dc_perl written by
@@ -1897,7 +1937,7 @@ for MS-DOS (originally by Paul Culley and Henk de Heer).
 
 =item The soundgrab
 
-	http://rawrec.sourceforge.net/soundgrab/soundgrab.html
+	http://brittonkerin.com/soundgrab/soundgrab.html
 
 soundgrab is designed to help you slice up a big long raw audio file
 (by default 44.1 kHz 2 channel signed sixteen bit little endian) and
@@ -1906,7 +1946,7 @@ you with a cassette player like command line interface.
 
 =item PDL (The Perl Data Language)
 
-	http://pdl.perl.org/index_en.html
+	http://pdl.perl.org/
 
 PDL (``Perl Data Language'') gives standard Perl the ability to
 compactly store and speedily manipulate the large N-dimensional data
@@ -1921,19 +1961,15 @@ interface. It supports ReadLine, provides a built in scripting language
 with a Lisp like syntax, an online help system, and uses wrappers to
 interface to the DBD modules.
 
-=item Ghostscript Shell
-
-	http://www.panix.com/~jdf/gshell/
-
-It provides a friendly way to play with the Ghostscript interpreter,
-including command history and auto-completion of Postscript font names
-and reserved words.
-
 =item vshnu (the New Visual Shell)
 
 	http://www.cs.indiana.edu/~kinzler/vshnu/
 
 A visual shell and CLI shell supplement.
+
+=item Distributions which depend on Term::ReadLine::Gnu on CPAN
+
+	https://metacpan.org/requires/distribution/Term-ReadLine-Gnu
 
 =back
 
@@ -1960,6 +1996,7 @@ Ornament feature works only on prompt strings.  It requires very hard
 hacking of C<display.c:rl_redisplay()> in GNU Readline library to
 ornament input line.
 
-C<newTTY()> is not tested yet.
+Some readline function and variable are not tested yet.  Your
+contribution is welcome.  See C<t/readline.t>XS for details.
 
 =cut
