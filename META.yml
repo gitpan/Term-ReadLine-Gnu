@@ -1,15 +1,22 @@
 --- #YAML:1.0
 name:               Term-ReadLine-Gnu
-version:            1.21
-abstract:           ~
-author:  []
-license:            unknown
+version:            1.22
+abstract:           Perl extension for the GNU Readline/History Library
+author:
+    - Hiroo HAYASHI <hiroo.hayashi@computer.org>
+license:            perl
 distribution_type:  module
 configure_requires:
     ExtUtils::MakeMaker:  0
 build_requires:
     ExtUtils::MakeMaker:  0
-requires:  {}
+requires:
+    perl:  5.007000
+resources:
+    bugtracker:  http://search.cpan.org/dist/Term-ReadLine-Gnu/
+    homepage:    http://sourceforge.net/projects/perl-trg/
+    license:     http://dev.perl.org/licenses/
+    repository:  svn://svn.code.sf.net/p/perl-trg/code/trunk
 no_index:
     directory:
         - t

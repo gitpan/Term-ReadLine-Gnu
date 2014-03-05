@@ -1,7 +1,7 @@
 #
 #	Makefile.PL for Term::ReadLine::Gnu
 #
-#	$Id: Makefile.PL 448 2014-03-01 16:51:05Z hayashi $
+#	$Id: Makefile.PL 455 2014-03-05 14:41:10Z hayashi $
 #
 #	Copyright (c) 2014 Hiroo Hayashi.  All rights reserved.
 #		<hiroo.hayashi@computer.org>
@@ -31,6 +31,10 @@ my $err = $ENV{AUTOMATED_TESTING} ? 0 : 1;
 if ($ENV{AUTOMATED_TESTING} && !open(SESAMI, '/dev/tty')) {
     warn "cannot open /dev/tty\n";
     exit 0;
+}
+# I could not reach a tester, "Chris Williams (BINGOS)".
+if ($ENV{AUTOMATED_TESTING} && ($Config{osname} eq 'openbsd')) {
+    die "OS unsupported\nPlease contact the author.\n";
 }
 
 $defs = ($Config{strings} =~ m|/string.h$|) ? '-DHAVE_STRING_H' : '';
@@ -101,8 +105,22 @@ if (my $extra_defs = guess_malloc_names($RLINC, $RLLIB, $defs, $lddflags, $libs)
 # generate a Makefile
 WriteMakefile
     (
+     #ABSTRACT	  => 'Perl extension for the GNU Readline/History Library',
+     ABSTRACT_FROM => 'Gnu.pm',
+     AUTHOR	  => 'Hiroo HAYASHI <hiroo.hayashi@computer.org>',
      NAME	  => 'Term::ReadLine::Gnu',
+     LICENSE	  => 'perl',
+     EXE_FILES	  => [ 'eg/perlsh' ],
+     META_MERGE	  => {
+	 resources => {
+	     license => 'http://dev.perl.org/licenses/',
+	     homepage => 'http://sourceforge.net/projects/perl-trg/',
+	     bugtracker => 'http://search.cpan.org/dist/Term-ReadLine-Gnu/',
+	     repository => 'svn://svn.code.sf.net/p/perl-trg/code/trunk',
+	 },
+     },
      VERSION_FROM => 'Gnu.pm',
+     MIN_PERL_VERSION => '5.7.0',
      LIBS	  => [ "$RLLIB $libs" ],
      LDDLFLAGS	  => "$RLLIB $Config{lddlflags}",
      dynamic_lib  => { OTHERLDFLAGS => $lddflags },

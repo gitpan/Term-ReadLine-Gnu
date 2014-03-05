@@ -1,7 +1,7 @@
 # -*- perl -*-
 #	readline.t - Test script for Term::ReadLine:GNU
 #
-#	$Id: readline.t 444 2014-03-01 16:10:23Z hayashi $
+#	$Id: readline.t 454 2014-03-02 14:28:30Z hayashi $
 #
 #	Copyright (c) 2014 Hiroo Hayashi.  All rights reserved.
 #
@@ -21,8 +21,8 @@ END {print "not ok 1\tfail to loading\n" unless $loaded;}
 # 'define @ARGV' is deprecated
 my $verbose = scalar @ARGV && ($ARGV[0] eq 'verbose');
 
-$^W = 1;			# perl -w
 use strict;
+use warnings;
 use vars qw($loaded $n);
 eval "use ExtUtils::testlib;" or eval "use lib './blib';";
 use Term::ReadLine;

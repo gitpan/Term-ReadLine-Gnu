@@ -1,7 +1,7 @@
 # -*- perl -*-
 #	history.t --- Term::ReadLine:GNU History Library Test Script
 #
-#	$Id: history.t 444 2014-03-01 16:10:23Z hayashi $
+#	$Id: history.t 454 2014-03-02 14:28:30Z hayashi $
 #
 #	Copyright (c) 2014 Hiroo Hayashi.  All rights reserved.
 #
@@ -18,8 +18,8 @@ BEGIN {
 }
 END {print "not ok $n\n" unless $loaded;}
 
-$^W = 1;			# perl -w
 use strict;
+use warnings;
 use vars qw($loaded $n);
 eval "use ExtUtils::testlib;" or eval "use lib './blib';";
 use Term::ReadLine;
@@ -227,9 +227,7 @@ print $t->where_history == 1		? "ok $n\n" : "not ok $n\n"; $n++;
 show_indices;
 print $t->previous_history eq 'one'	? "ok $n\n" : "not ok $n\n"; $n++;
 show_indices;
-$^W = 0;			# returns NULL
-print $t->previous_history eq ''	? "ok $n\n" : "not ok $n\n"; $n++;
-$^W = 1;
+print ! defined $t->previous_history 	? "ok $n\n" : "not ok $n\n"; $n++;
 show_indices;
 
 # next_history()
@@ -239,9 +237,7 @@ print $t->next_history eq 'three'	? "ok $n\n" : "not ok $n\n"; $n++;
 show_indices; 
 print $t->next_history eq 'four'	? "ok $n\n" : "not ok $n\n"; $n++;
 show_indices;
-$^W = 0;			# returns NULL
-print $t->next_history eq ''		? "ok $n\n" : "not ok $n\n"; $n++;
-$^W = 1;
+print ! defined $t->next_history	? "ok $n\n" : "not ok $n\n"; $n++;
 print $t->where_history == 4		? "ok $n\n" : "not ok $n\n"; $n++;
 show_indices;
 
