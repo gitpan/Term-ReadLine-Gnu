@@ -1,6 +1,6 @@
 #! /usr/local/bin/perl
 #
-#	$Id: perlsh 454 2014-03-02 14:28:30Z hayashi $	
+#	$Id: perlsh 459 2014-03-16 13:50:34Z hayashi $	
 #
 #	Copyright (c) 2014 Hiroo Hayashi. All Rights Reserved.
 #
@@ -433,7 +433,7 @@ the history.  The default value is 256.
 If true, restrict unsafe constructs.  See C<use strict> in perl man
 page.  The default value is 0;
 
-=over
+=back
 
 =head1 FILES
 

@@ -1,7 +1,7 @@
 #
 #	Makefile.PL for Term::ReadLine::Gnu
 #
-#	$Id: Makefile.PL 455 2014-03-05 14:41:10Z hayashi $
+#	$Id: Makefile.PL 462 2014-03-19 15:25:54Z hayashi $
 #
 #	Copyright (c) 2014 Hiroo Hayashi.  All rights reserved.
 #		<hiroo.hayashi@computer.org>
@@ -21,7 +21,7 @@ use strict;
 use ExtUtils::MakeMaker;
 use Config;
 use Getopt::Long;
-use 5.007; use 5.7.0;		# use version 1.09 for older Perl
+use 5.008; use 5.8.0;
 my ($defs, $libs, $lddflags, $RLLIB, $RLINC);
 
 # exit 0 before creating the Makefile to be CPAN Testers friendly
@@ -105,7 +105,6 @@ if (my $extra_defs = guess_malloc_names($RLINC, $RLLIB, $defs, $lddflags, $libs)
 # generate a Makefile
 WriteMakefile
     (
-     #ABSTRACT	  => 'Perl extension for the GNU Readline/History Library',
      ABSTRACT_FROM => 'Gnu.pm',
      AUTHOR	  => 'Hiroo HAYASHI <hiroo.hayashi@computer.org>',
      NAME	  => 'Term::ReadLine::Gnu',
@@ -115,12 +114,12 @@ WriteMakefile
 	 resources => {
 	     license => 'http://dev.perl.org/licenses/',
 	     homepage => 'http://sourceforge.net/projects/perl-trg/',
-	     bugtracker => 'http://search.cpan.org/dist/Term-ReadLine-Gnu/',
-	     repository => 'svn://svn.code.sf.net/p/perl-trg/code/trunk',
+	     bugtracker => 'http://rt.cpan.org/Public/Dist/Display.html?Name=Term-ReadLine-Gnu',
+	     repository => 'https://sourceforge.net/p/perl-trg/code/HEAD/tree/',
 	 },
      },
      VERSION_FROM => 'Gnu.pm',
-     MIN_PERL_VERSION => '5.7.0',
+     MIN_PERL_VERSION => '5.8.0',
      LIBS	  => [ "$RLLIB $libs" ],
      LDDLFLAGS	  => "$RLLIB $Config{lddlflags}",
      dynamic_lib  => { OTHERLDFLAGS => $lddflags },

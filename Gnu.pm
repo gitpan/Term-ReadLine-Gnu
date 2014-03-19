@@ -1,7 +1,7 @@
 #
 #	Gnu.pm --- The GNU Readline/History Library wrapper module
 #
-#	$Id: Gnu.pm 454 2014-03-02 14:28:30Z hayashi $
+#	$Id: Gnu.pm 462 2014-03-19 15:25:54Z hayashi $
 #
 #	Copyright (c) 2014 Hiroo Hayashi.  All rights reserved.
 #
@@ -58,7 +58,8 @@ These methods are standard methods defined by B<Term::ReadLine>.
 use strict;
 use warnings;
 use Carp;
-use 5.007; use 5.7.0;		# use version 1.09 for older Perl
+# use version 1.22 for perl 5.7.x, or 1.09 for older Perl
+use 5.008; use 5.8.0;
 
 # This module can't be loaded directly.
 BEGIN {
@@ -75,7 +76,7 @@ END
     use DynaLoader;
     use vars qw($VERSION @ISA @EXPORT_OK);
 
-    $VERSION = '1.22';
+    $VERSION = '1.23';		# update Gnu::XS::VERSION also.
 
     # Term::ReadLine::Gnu::AU makes a function in
     # `Term::ReadLine::Gnu::XS' as a method.
@@ -132,9 +133,6 @@ use vars qw(%Attribs %Features);
 	     ornaments => Term::ReadLine::Stub->Features->{'ornaments'},
 	     stiflehistory => 1,
 	    );
-
-sub Attribs { \%Attribs; }
-sub Features { \%Features; }
 
 # keep rl_readline_version value for efficiency
 my $readline_version;
@@ -246,14 +244,7 @@ sub new {
     $self->initialize();
 
     # enable ornaments to be compatible with perl5.004_05(?)
-    unless ($ENV{PERL_RL} and $ENV{PERL_RL} =~ /\bo\w*=0/) {
-	local $^W = 0;		# Term::ReadLine is not warning flag free
-	# Without the next line Term::ReadLine::Stub::ornaments is used.
-	# Why does Term::ReadLine::Gnu::AU selects it at first?!!!
-	# If you know why this happens, please let me know.  Thanks.
-	undef &Term::ReadLine::Gnu::ornaments;
-	$self->ornaments(1);
-    }
+    $self->ornaments(1) unless ($ENV{PERL_RL} and $ENV{PERL_RL} =~ /\bo\w*=0/);
 
     if (!@_) {
 	my ($IN,$OUT) = $self->findConsole();
@@ -301,6 +292,9 @@ sub readline {			# should be ReadLine
     # contributed fix for Perl debugger
     # make sure the outstream fd inside the readline library is
     # in sync (see http://bugs.debian.org/236018)
+    # This is not a real fix but left for system where this fix works.
+    # Here is the real fix for perl5db.pl.
+    # https://rt.perl.org/Public/Bug/Display.html?id=121456
     $Attribs{outstream} = $Attribs{outstream};
 
     # ornament support (now prompt only)
@@ -337,6 +331,14 @@ sub readline {			# should be ReadLine
 	$line = $self->rl_readline($prompt);
     }
     return undef unless defined $line;
+
+    # from ReadLine.pm: convert to the internal representation from UTF-8
+    # see 'perldoc perlvar'
+    if ((${^UNICODE} & 1 || defined ${^ENCODING}) &&
+	utf8::valid($line)) {
+	#utf8::upgrade($line);
+	utf8::decode($line);
+    }
 
     # history expansion
     if ($Attribs{do_expand}) {
@@ -401,12 +403,14 @@ sub MinLine {
     $old_minlength;
 }
 
-# findConsole is defined in ReadLine.pm.
-
 =item C<findConsole>
 
 returns an array with two strings that give most appropriate names for
 files for input and output using conventions C<"E<lt>$in">, C<"E<gt>$out">.
+
+=cut
+
+# findConsole is defined in ReadLine.pm.
 
 =item C<Attribs>
 
@@ -415,6 +419,10 @@ returns a reference to a hash which describes internal configuration
 standard conventions with the leading C<rl_> stripped.
 
 See section "Variables" for supported variables.
+
+=cut
+
+sub Attribs { \%Attribs; }
 
 =item C<Features>
 
@@ -432,7 +440,41 @@ is getting input.
 
 =cut
 
-# Not tested yet.  How do I use this?
+sub Features { \%Features; }
+
+=item C<tkRunning>
+
+makes Tk event loop run when waiting for user input (i.e., during
+C<readline> method).
+
+=cut
+
+# tkRunning is defined in ReadLine.pm.
+
+=item C<ornaments>
+
+makes the command line stand out by using termcap data.  The argument
+to C<ornaments> should be 0, 1, or a string of a form
+C<"aa,bb,cc,dd">.  Four components of this string should be names of
+I<terminal capacities>, first two will be issued to make the prompt
+standout, last two to make the input line standout.
+
+=cut
+
+sub ornaments {
+    my $self = shift;
+    return Term::ReadLine::Gnu::XS::ornaments(@_);
+}
+
+=item C<newTTY>
+
+takes two arguments which are input filehandle and output filehandle.
+Switches to use these filehandles.
+
+=cut
+
+# used by a program who changes input/output stream.
+# perldb5.pl is an example.
 sub newTTY {
     my ($self, $in, $out) = @_;
     $Attribs{instream}  = $in;
@@ -668,7 +710,14 @@ sub STORE {
     } elsif ($type eq 'F') {
 	return _rl_store_function($value, $id);
     } elsif ($type eq 'IO') {
-	return _rl_store_iostream($value, $id);
+	# pop stdio layer pushed by PerlIO_findFILE().
+	# https://rt.cpan.org/Ticket/Display.html?id=59832
+	#my @layers;
+	my $FH = _rl_store_iostream($value, $id);
+	#@layers = PerlIO::get_layers($FH); warn "$id<", join(':', @layers), "\n";
+	binmode($FH, ":pop");
+	#@layers = PerlIO::get_layers($FH); warn "$id>", join(':', @layers), "\n";
+	return $FH;
     } elsif ($type eq 'K' || $type eq 'LF') {
 	carp "Term::ReadLine::Gnu::Var::STORE: read only variable `$name'\n";
 	return undef;
@@ -2000,6 +2049,10 @@ ornament input line.
 
 Some readline function and variable are not tested yet.  Your
 contribution is welcome.  See C<t/readline.t>XS for details.
+
+If the pager command (| or ||) in Perl debugger causes segmentation
+fault, you need to fix perl5db.pl.  See
+https://rt.perl.org/Public/Bug/Display.html?id=121456 for details.
 
 =head1 LICENSE
 
