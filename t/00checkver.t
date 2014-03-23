@@ -1,7 +1,7 @@
 # -*- perl -*-
 #	00check.t - check versions
 #
-#	$Id: 00checkver.t 454 2014-03-02 14:28:30Z hayashi $
+#	$Id: 00checkver.t 466 2014-03-23 08:05:23Z hayashi $
 #
 #	Copyright (c) 2014 Hiroo Hayashi.  All rights reserved.
 #
@@ -9,7 +9,6 @@
 #	modify it under the same terms as Perl itself.
 
 BEGIN {
-    print "1..3\n"; $n = 1;
     $ENV{PERL_RL} = 'Gnu';	# force to use Term::ReadLine::Gnu
 }
 END {
@@ -21,21 +20,29 @@ END {
 
 use strict;
 use warnings;
-use vars qw($loaded $n);
+use Test;
+BEGIN { plan tests => 4 }
+use vars qw($loaded);
 eval "use ExtUtils::testlib;" or eval "use lib './blib';";
+
 use Term::ReadLine;
-use Term::ReadLine::Gnu;
+
+print "# I'm testing Term::ReadLine::Gnu version $Term::ReadLine::Gnu::VERSION\n";
 
 $loaded = 1;
-print "ok $n\tloading\n"; $n++;
+ok($loaded, 1);
 
 my $t = new Term::ReadLine 'ReadLineTest';
-print "ok $n\tnew\n"; $n++;
+ok(1);
+my $a = $t->Attribs;
+ok(1);
 
-print "OS: $^O\nPerl version: $]\n";
-$t->Attribs->{outstream} = \*STDOUT;
-$t->rl_call_function('display-readline-version');
-print "ok $n\tdone\n"; $n++;
+print  "# OS: $^O\n";
+print  "# Perl version: $]\n";
+printf "# GNU Readline Library version: $a->{library_version}, 0x%X\n", $a->{readline_version};
+print  "# \$TERM=$ENV{TERM}\n";
+
+ok(1);
 
 exit 0;
 

@@ -2,7 +2,7 @@
 #
 #	XS.pm : perl function definition for Term::ReadLine::Gnu
 #
-#	$Id: XS.pm 462 2014-03-19 15:25:54Z hayashi $
+#	$Id: XS.pm 468 2014-03-23 11:56:58Z hayashi $
 #
 #	Copyright (c) 2014 Hiroo Hayashi.  All rights reserved.
 #
@@ -17,7 +17,7 @@ use warnings;
 use AutoLoader 'AUTOLOAD';
 
 use vars qw($VERSION);
-$VERSION='1.23';	# added for CPAN
+$VERSION='1.24';	# added for CPAN
 
 # make aliases
 use vars qw(%Attribs);
