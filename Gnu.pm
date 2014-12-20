@@ -1,9 +1,9 @@
 #
 #	Gnu.pm --- The GNU Readline/History Library wrapper module
 #
-#	$Id: Gnu.pm 468 2014-03-23 11:56:58Z hayashi $
+#	$Id: Gnu.pm 476 2014-12-13 03:56:06Z hayashi $
 #
-#	Copyright (c) 2014 Hiroo Hayashi.  All rights reserved.
+#	Copyright (c) 1996 Hiroo Hayashi.  All rights reserved.
 #
 #	This program is free software; you can redistribute it and/or
 #	modify it under the same terms as Perl itself.
@@ -82,7 +82,7 @@ END
     use DynaLoader;
     use vars qw($VERSION @ISA @EXPORT_OK);
 
-    $VERSION = '1.24';		# update Gnu::XS::VERSION also.
+    $VERSION = '1.25';		# update Gnu::XS::VERSION also.
 
     # Term::ReadLine::Gnu::AU makes a function in
     # `Term::ReadLine::Gnu::XS' as a method.
@@ -246,9 +246,6 @@ sub new {
     # calls setenv() before the 1st assignment to $ENV{}.
     $ENV{_TRL_DUMMY} = '';
 
-    # initialize the GNU Readline Library and termcap library
-    $self->initialize();
-
     # enable ornaments to be compatible with perl5.004_05(?)
     $self->ornaments(1) unless ($ENV{PERL_RL} and $ENV{PERL_RL} =~ /\bo\w*=0/);
 
@@ -267,6 +264,11 @@ sub new {
 	$Attribs{outstream} = shift;
     }
     $readline_version = $Attribs{readline_version};
+
+    # initialize the GNU Readline Library and termcap library
+    # This is not necessary but is left to keep backward compatibility.
+    # https://rt.cpan.org/Ticket/Display.html?id=96569
+    $self->initialize();
 
     $self;
 }

@@ -1,11 +1,21 @@
 	-*- Indented-text -*-
-	$Id: Changes 468 2014-03-23 11:56:58Z hayashi $
+	$Id: Changes 476 2014-12-13 03:56:06Z hayashi $
+
+1.25  2014-12-13
+	- fix to call rl_initialize() after I/O stream
+	  setting. [rt.cpan.org #96569]
+	- t/readline.t: comment-out stty-command calls. 
+	- t/history.t, t/readline.t: print out the corresponding
+          section names in the manuals of the libraries.
+	- eg/perlsh: use 'IO' instead of 'FILEHANDLE' which Perl 5.20
+	  warns. [rt.cpan.org #100883]
+	- Fix copyright notices to use the year of first publication.
 
 1.24  2014-03-23
 	- fix not to make the PerlIO layer empty for Perl 5.8.9 or
           before. [rt.cpan.org #59832]
 	- update Pod document assuming the use of Pod::Simple::HTMLBatch.
-	- t/00checkver.t: not to use 'display-readline-version') and "use
+	- t/00checkver.t: not to use 'display-readline-version' and "use
 	  Test;"
 	- INSTALL: add "(Install) Using Package" section.
 
@@ -424,7 +434,6 @@
 				the callback functions
 
 0.08  Sun Apr 13 23:24:52 1997
-
 	- bug fix: AddHistory() accepts list again.
 	- move perlsh into eg/.
 	- add eg/ptksh+ which demonstrates the callback functions.
@@ -434,7 +443,6 @@
 	- internal functions, fetch_var() and store_var(), are removed.
 
 0.07  Wed Mar 19 02:26:06 1997
-
 	- interface to internal function and variables are changed.
 	  New interface is compatible with new Term::ReadLine.pm which
 	  is distributed with Perl 5.003_92 and later.  But it is not

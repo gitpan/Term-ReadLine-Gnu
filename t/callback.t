@@ -1,9 +1,9 @@
 # -*- perl -*-
 #	callback.t - Test script for Term::ReadLine:GNU callback function
 #
-#	$Id: callback.t 454 2014-03-02 14:28:30Z hayashi $
+#	$Id: callback.t 475 2014-12-13 03:20:00Z hayashi $
 #
-#	Copyright (c) 2014 Hiroo Hayashi.  All rights reserved.
+#	Copyright (c) 1999 Hiroo Hayashi.  All rights reserved.
 #
 #	This program is free software; you can redistribute it and/or
 #	modify it under the same terms as Perl itself.

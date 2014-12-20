@@ -1,12 +1,12 @@
 #!/usr/local/bin/perl -w
 #
-# $Id: ptksh+ 438 2014-02-03 14:40:47Z hayashi $
+# $Id: ptksh+ 475 2014-12-13 03:20:00Z hayashi $
 #
 # POD documentation after __END__
 
 # This program is contributed by Achim Bohnet.  It demonstrates how to
 # use the callback functions in the GNU Readline Library.  This script
-# is essetially equivalent with executing the following lines in
+# is essentially equivalent with executing the following lines in
 # `eg/perlsh';
 #	$PerlSh::term->tkRunning(1);
 #	use Tk;

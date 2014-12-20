@@ -1,9 +1,9 @@
 # -*- perl -*-
 #	00check.t - check versions
 #
-#	$Id: 00checkver.t 466 2014-03-23 08:05:23Z hayashi $
+#	$Id: 00checkver.t 475 2014-12-13 03:20:00Z hayashi $
 #
-#	Copyright (c) 2014 Hiroo Hayashi.  All rights reserved.
+#	Copyright (c) 2008 Hiroo Hayashi.  All rights reserved.
 #
 #	This program is free software; you can redistribute it and/or
 #	modify it under the same terms as Perl itself.

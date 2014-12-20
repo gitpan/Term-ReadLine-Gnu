@@ -1,9 +1,9 @@
 	-*- Indented-text -*-
-$Id: README 457 2014-03-09 14:44:24Z hayashi $
+$Id: README 477 2014-12-14 05:35:36Z hayashi $
 
 Term::ReadLine::Gnu --- GNU Readline Library Wrapper Module
 
-	Copyright (c) 2014 Hiroo Hayashi.  All rights reserved.
+	Copyright (c) 1996 Hiroo Hayashi.  All rights reserved.
 
 	This program is free software; you can redistribute it and/or
 	modify it under the same terms as Perl itself.
@@ -42,7 +42,7 @@ Description:
 	of fixing his module.
 
 Prerequisites:
-	You must have Perl 5.7 or later.  If you have to use old Perl
+	You must have Perl 5.8 or later.  If you have to use old Perl
 	for some reason, use Term::ReadLine::Gnu 1.09.  (I recommend
 	you to use newer Perl.)
 
